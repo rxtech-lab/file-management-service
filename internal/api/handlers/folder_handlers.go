@@ -168,8 +168,22 @@ func (h *StrictHandlers) DeleteFolder(
 		return generated.DeleteFolder401JSONResponse{UnauthorizedJSONResponse: unauthorized()}, nil
 	}
 
+	// Get all files in folder recursively before deletion (for S3 cleanup)
+	filesToCleanup, _ := h.fileService.GetFilesInFolderRecursive(userID, uint(request.Id))
+
+	// Delete folder from database (cascade deletes files in DB)
 	if err := h.folderService.DeleteFolder(userID, uint(request.Id)); err != nil {
 		return generated.DeleteFolder404JSONResponse{NotFoundJSONResponse: notFound(err.Error())}, nil
+	}
+
+	// Clean up S3 objects and embeddings for all files (best effort)
+	for _, file := range filesToCleanup {
+		if file.S3Key != "" {
+			_ = h.uploadService.DeleteFile(ctx, file.S3Key)
+		}
+		if file.HasEmbedding {
+			_ = h.embeddingService.DeleteFileEmbedding(userID, file.ID)
+		}
 	}
 
 	return generated.DeleteFolder204Response{}, nil

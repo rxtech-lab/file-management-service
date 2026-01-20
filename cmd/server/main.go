@@ -55,6 +55,7 @@ func main() {
 		fileService,
 		uploadService,
 		searchService,
+		embeddingService,
 	)
 
 	// Initialize API server

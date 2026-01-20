@@ -226,11 +226,19 @@ func (t *UpdateFolderTool) GetHandler() server.ToolHandlerFunc {
 
 // DeleteFolderTool handles deleting a folder
 type DeleteFolderTool struct {
-	service services.FolderService
+	service          services.FolderService
+	fileService      services.FileService
+	uploadService    services.UploadService
+	embeddingService services.EmbeddingService
 }
 
-func NewDeleteFolderTool(service services.FolderService) *DeleteFolderTool {
-	return &DeleteFolderTool{service: service}
+func NewDeleteFolderTool(service services.FolderService, fileService services.FileService, uploadService services.UploadService, embeddingService services.EmbeddingService) *DeleteFolderTool {
+	return &DeleteFolderTool{
+		service:          service,
+		fileService:      fileService,
+		uploadService:    uploadService,
+		embeddingService: embeddingService,
+	}
 }
 
 func (t *DeleteFolderTool) GetTool() mcp.Tool {
@@ -253,13 +261,34 @@ func (t *DeleteFolderTool) GetHandler() server.ToolHandlerFunc {
 			return mcp.NewToolResultError("folder_id is required"), nil
 		}
 
+		// Get all files in folder recursively before deletion (for S3 cleanup)
+		var filesToCleanup []models.File
+		if t.fileService != nil {
+			files, err := t.fileService.GetFilesInFolderRecursive(userID, folderID)
+			if err == nil {
+				filesToCleanup = files
+			}
+		}
+
+		// Delete folder from database (cascade deletes files in DB)
 		if err := t.service.DeleteFolder(userID, folderID); err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Failed to delete folder: %v", err)), nil
 		}
 
+		// Clean up S3 objects and embeddings for all files (best effort)
+		for _, file := range filesToCleanup {
+			if file.S3Key != "" && t.uploadService != nil {
+				_ = t.uploadService.DeleteFile(ctx, file.S3Key)
+			}
+			if file.HasEmbedding && t.embeddingService != nil {
+				_ = t.embeddingService.DeleteFileEmbedding(userID, file.ID)
+			}
+		}
+
 		result, _ := json.Marshal(map[string]interface{}{
-			"message":   "Folder deleted successfully",
-			"folder_id": folderID,
+			"message":       "Folder deleted successfully",
+			"folder_id":     folderID,
+			"files_cleaned": len(filesToCleanup),
 		})
 		return mcp.NewToolResultText(string(result)), nil
 	}

@@ -269,11 +269,17 @@ func (t *UpdateFileTool) GetHandler() server.ToolHandlerFunc {
 
 // DeleteFileTool handles deleting a file
 type DeleteFileTool struct {
-	service services.FileService
+	service          services.FileService
+	uploadService    services.UploadService
+	embeddingService services.EmbeddingService
 }
 
-func NewDeleteFileTool(service services.FileService) *DeleteFileTool {
-	return &DeleteFileTool{service: service}
+func NewDeleteFileTool(service services.FileService, uploadService services.UploadService, embeddingService services.EmbeddingService) *DeleteFileTool {
+	return &DeleteFileTool{
+		service:          service,
+		uploadService:    uploadService,
+		embeddingService: embeddingService,
+	}
 }
 
 func (t *DeleteFileTool) GetTool() mcp.Tool {
@@ -296,8 +302,28 @@ func (t *DeleteFileTool) GetHandler() server.ToolHandlerFunc {
 			return mcp.NewToolResultError("file_id is required"), nil
 		}
 
+		// Get file first to capture S3Key and HasEmbedding for cleanup
+		file, err := t.service.GetFileByID(userID, fileID)
+		if err != nil {
+			return mcp.NewToolResultError(fmt.Sprintf("Failed to get file: %v", err)), nil
+		}
+		if file == nil {
+			return mcp.NewToolResultError("File not found"), nil
+		}
+
+		// Delete from database
 		if err := t.service.DeleteFile(userID, fileID); err != nil {
 			return mcp.NewToolResultError(fmt.Sprintf("Failed to delete file: %v", err)), nil
+		}
+
+		// Delete from S3 (best effort - don't fail if S3 delete fails)
+		if file.S3Key != "" && t.uploadService != nil {
+			_ = t.uploadService.DeleteFile(ctx, file.S3Key)
+		}
+
+		// Delete embedding if exists (best effort)
+		if file.HasEmbedding && t.embeddingService != nil {
+			_ = t.embeddingService.DeleteFileEmbedding(userID, file.ID)
 		}
 
 		result, _ := json.Marshal(map[string]any{
