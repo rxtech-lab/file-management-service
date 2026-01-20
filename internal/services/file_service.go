@@ -42,6 +42,9 @@ type FileService interface {
 	UpdateFileContent(userID string, fileID uint, content, summary string, fileType models.FileType) error
 	UpdateFileProcessingStatus(userID string, fileID uint, status models.FileProcessingStatus, errMsg string) error
 	SetFileHasEmbedding(userID string, fileID uint, hasEmbedding bool) error
+
+	// Folder operations
+	GetFilesInFolderRecursive(userID string, folderID uint) ([]models.File, error)
 }
 
 type fileService struct {
@@ -384,4 +387,33 @@ func (s *fileService) SetFileHasEmbedding(userID string, fileID uint, hasEmbeddi
 		return errors.New("file not found")
 	}
 	return nil
+}
+
+// GetFilesInFolderRecursive returns all files in a folder and its subfolders
+func (s *fileService) GetFilesInFolderRecursive(userID string, folderID uint) ([]models.File, error) {
+	var allFiles []models.File
+
+	// Get files directly in this folder
+	var files []models.File
+	if err := s.db.Where("folder_id = ? AND user_id = ?", folderID, userID).Find(&files).Error; err != nil {
+		return nil, err
+	}
+	allFiles = append(allFiles, files...)
+
+	// Get all subfolders
+	var subfolders []models.Folder
+	if err := s.db.Where("parent_id = ? AND user_id = ?", folderID, userID).Find(&subfolders).Error; err != nil {
+		return nil, err
+	}
+
+	// Recursively get files from subfolders
+	for _, subfolder := range subfolders {
+		subFiles, err := s.GetFilesInFolderRecursive(userID, subfolder.ID)
+		if err != nil {
+			return nil, err
+		}
+		allFiles = append(allFiles, subFiles...)
+	}
+
+	return allFiles, nil
 }

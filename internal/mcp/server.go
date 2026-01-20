@@ -25,11 +25,12 @@ func NewMCPServer(
 	fileService services.FileService,
 	uploadService services.UploadService,
 	searchService services.SearchService,
+	embeddingService services.EmbeddingService,
 ) *MCPServer {
 	mcpServer := &MCPServer{
 		dbService: dbService,
 	}
-	mcpServer.initializeTools(tagService, folderService, fileService, uploadService, searchService)
+	mcpServer.initializeTools(tagService, folderService, fileService, uploadService, searchService, embeddingService)
 	return mcpServer
 }
 
@@ -40,6 +41,7 @@ func (s *MCPServer) initializeTools(
 	fileService services.FileService,
 	uploadService services.UploadService,
 	searchService services.SearchService,
+	embeddingService services.EmbeddingService,
 ) {
 	srv := server.NewMCPServer(
 		"File Management MCP Server",
@@ -103,7 +105,7 @@ func (s *MCPServer) initializeTools(
 	updateFolderTool := tools.NewUpdateFolderTool(folderService)
 	srv.AddTool(updateFolderTool.GetTool(), updateFolderTool.GetHandler())
 
-	deleteFolderTool := tools.NewDeleteFolderTool(folderService)
+	deleteFolderTool := tools.NewDeleteFolderTool(folderService, fileService, uploadService, embeddingService)
 	srv.AddTool(deleteFolderTool.GetTool(), deleteFolderTool.GetHandler())
 
 	moveFolderTool := tools.NewMoveFolderTool(folderService)
@@ -131,7 +133,7 @@ func (s *MCPServer) initializeTools(
 	updateFileTool := tools.NewUpdateFileTool(fileService)
 	srv.AddTool(updateFileTool.GetTool(), updateFileTool.GetHandler())
 
-	deleteFileTool := tools.NewDeleteFileTool(fileService)
+	deleteFileTool := tools.NewDeleteFileTool(fileService, uploadService, embeddingService)
 	srv.AddTool(deleteFileTool.GetTool(), deleteFileTool.GetHandler())
 
 	moveFilesTool := tools.NewMoveFilesTool(fileService)
