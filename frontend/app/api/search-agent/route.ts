@@ -25,7 +25,7 @@ type DisplayFilesInput = z.infer<typeof displayFilesSchema>;
 // Client-side tool for displaying files in the UI
 const displayFilesTool = {
   display_files: tool<DisplayFilesInput, DisplayFilesInput>({
-    description: "Display a list of files to the user. ALWAYS use this tool to show file search results. Never include download links in your text responses.",
+    description: "Display ONLY the relevant files to the user based on their query. ALWAYS use this tool to show file search results. Do NOT include all search results - only include files that are most relevant to the user's specific request. Never include download links in your text responses.",
     inputSchema: displayFilesSchema,
     execute: async (input) => {
       return { files: input.files, summary: input.summary };
