@@ -114,6 +114,37 @@ func (s *FileTestSuite) TestListFilesInFolder() {
 	s.Len(data, 1)
 }
 
+func (s *FileTestSuite) TestListFilesRootFolderDoesNotShowSubfolderFiles() {
+	// Create folder
+	folderID, err := s.setup.CreateTestFolder("Documents", nil)
+	s.Require().NoError(err)
+
+	// Create file in folder
+	_, err = s.setup.CreateTestFile("InFolder", "files/test-user-123/in-folder.pdf", "in-folder.pdf", &folderID)
+	s.Require().NoError(err)
+
+	// Create file in root (no folder)
+	_, err = s.setup.CreateTestFile("InRoot", "files/test-user-123/in-root.pdf", "in-root.pdf", nil)
+	s.Require().NoError(err)
+
+	// List files without folder_id (root folder view)
+	resp, err := s.setup.MakeRequest("GET", "/api/files", nil)
+	s.Require().NoError(err)
+	s.Equal(http.StatusOK, resp.StatusCode)
+
+	result, err := s.setup.ReadResponseBody(resp)
+	s.Require().NoError(err)
+
+	// Should only return the root file, not the one in the folder
+	data := result["data"].([]interface{})
+	s.Len(data, 1)
+	s.Equal(float64(1), result["total"])
+
+	// Verify it's the root file
+	firstFile := data[0].(map[string]interface{})
+	s.Equal("InRoot", firstFile["title"])
+}
+
 func (s *FileTestSuite) TestListFilesWithKeyword() {
 	// Create files
 	_, err := s.setup.CreateTestFile("Invoice 2024", "files/test-user-123/invoice.pdf", "invoice.pdf", nil)

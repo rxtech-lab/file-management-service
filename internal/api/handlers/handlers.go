@@ -28,6 +28,7 @@ type StrictHandlers struct {
 	contentParserService services.ContentParserService
 	searchService        services.SearchService
 	summaryService       services.SummaryService
+	agentService         services.AgentService
 }
 
 // NewStrictHandlers creates a new StrictHandlers instance
@@ -40,6 +41,7 @@ func NewStrictHandlers(
 	contentParserService services.ContentParserService,
 	searchService services.SearchService,
 	summaryService services.SummaryService,
+	agentService services.AgentService,
 ) *StrictHandlers {
 	return &StrictHandlers{
 		tagService:           tagService,
@@ -50,6 +52,7 @@ func NewStrictHandlers(
 		contentParserService: contentParserService,
 		searchService:        searchService,
 		summaryService:       summaryService,
+		agentService:         agentService,
 	}
 }
 

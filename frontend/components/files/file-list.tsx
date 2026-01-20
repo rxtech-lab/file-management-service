@@ -10,6 +10,7 @@ import {
   Tags,
   Info,
   Trash2,
+  Sparkles,
 } from "lucide-react";
 import {
   Table,
@@ -59,10 +60,12 @@ interface FileListProps {
   onFileMove?: (file: FileItem) => void;
   onFileManageTags?: (file: FileItem) => void;
   onFileViewMetadata?: (file: FileItem) => void;
+  onFileAIOrganize?: (file: FileItem) => void;
   // Folder actions
   onFolderRename?: (folder: Folder) => void;
   onFolderMove?: (folder: Folder) => void;
   onFolderManageTags?: (folder: Folder) => void;
+  onFolderAIOrganize?: (folder: Folder) => void;
   // Empty space actions
   onNewFolder?: () => void;
   onUpload?: () => void;
@@ -94,9 +97,11 @@ export function FileList({
   onFileMove,
   onFileManageTags,
   onFileViewMetadata,
+  onFileAIOrganize,
   onFolderRename,
   onFolderMove,
   onFolderManageTags,
+  onFolderAIOrganize,
   onNewFolder,
   onUpload,
   onSelectAll,
@@ -278,6 +283,13 @@ export function FileList({
 
                 <ContextMenuSeparator />
 
+                <ContextMenuItem onClick={() => onFolderAIOrganize?.(folder)}>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  AI Organize Contents
+                </ContextMenuItem>
+
+                <ContextMenuSeparator />
+
                 <ContextMenuItem
                   onClick={() => handleFolderDelete(folder)}
                   variant="destructive"
@@ -412,6 +424,13 @@ export function FileList({
                   <ContextMenuItem onClick={() => onFileViewMetadata?.(file)}>
                     <Info className="mr-2 h-4 w-4" />
                     View metadata
+                  </ContextMenuItem>
+
+                  <ContextMenuSeparator />
+
+                  <ContextMenuItem onClick={() => onFileAIOrganize?.(file)}>
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    AI Organize
                   </ContextMenuItem>
 
                   <ContextMenuSeparator />

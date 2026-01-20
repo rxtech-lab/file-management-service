@@ -8,7 +8,7 @@ import {
   processFileAction,
   getFileAction,
 } from "@/lib/actions/file-actions";
-import type { ProcessingStatus } from "@/lib/api/types";
+import type { ProcessingStatus, AgentEvent } from "@/lib/api/types";
 
 export interface UploadQueueItem {
   id: string;
@@ -26,6 +26,9 @@ export interface UploadQueueItem {
   processingStatus?: ProcessingStatus;
   aiSummary?: string;
   error?: string;
+  // Agent status for real-time updates
+  agentStatus?: string;
+  agentStep?: AgentEvent["type"];
 }
 
 export function useUploadQueue(folderId: number | null) {
@@ -33,6 +36,50 @@ export function useUploadQueue(folderId: number | null) {
   const [items, setItems] = useState<UploadQueueItem[]>([]);
   const [isExpanded, setIsExpanded] = useState(false);
   const pollingIntervals = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const agentEventSources = useRef<Map<string, EventSource>>(new Map());
+
+  // Subscribe to agent SSE for real-time status updates
+  const subscribeToAgentStream = useCallback(
+    (itemId: string, fileId: number) => {
+      // Use Next.js API route to proxy the SSE stream with authentication
+      const eventSource = new EventSource(`/api/agent-stream/${fileId}`);
+
+      agentEventSources.current.set(itemId, eventSource);
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data) as AgentEvent;
+
+          // Update agent status in the queue item
+          setItems((prev) =>
+            prev.map((item) =>
+              item.id === itemId
+                ? {
+                    ...item,
+                    agentStatus: data.message,
+                    agentStep: data.type,
+                  }
+                : item
+            )
+          );
+
+          // Close connection when done
+          if (data.type === "done" || data.type === "error") {
+            eventSource.close();
+            agentEventSources.current.delete(itemId);
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      };
+
+      eventSource.onerror = () => {
+        eventSource.close();
+        agentEventSources.current.delete(itemId);
+      };
+    },
+    []
+  );
 
   const updateItem = useCallback(
     (id: string, updates: Partial<UploadQueueItem>) => {
@@ -90,6 +137,9 @@ export function useUploadQueue(folderId: number | null) {
         // Step 3: Trigger processing
         await processFileAction(fileId);
 
+        // Step 3.5: Subscribe to agent SSE for real-time status updates
+        subscribeToAgentStream(item.id, fileId);
+
         // Step 4: Start polling for processing status
         const pollInterval = setInterval(async () => {
           const fileResult = await getFileAction(fileId);
@@ -133,7 +183,7 @@ export function useUploadQueue(folderId: number | null) {
         });
       }
     },
-    [folderId, updateItem, router],
+    [folderId, updateItem, router, subscribeToAgentStream],
   );
 
   const addFiles = useCallback(
@@ -164,6 +214,13 @@ export function useUploadQueue(folderId: number | null) {
       pollingIntervals.current.delete(id);
     }
 
+    // Close any agent event source
+    const eventSource = agentEventSources.current.get(id);
+    if (eventSource) {
+      eventSource.close();
+      agentEventSources.current.delete(id);
+    }
+
     setItems((prev) => prev.filter((item) => item.id !== id));
   }, []);
 
@@ -186,11 +243,14 @@ export function useUploadQueue(folderId: number | null) {
     setIsExpanded((prev) => !prev);
   }, []);
 
-  // Cleanup polling intervals on unmount
+  // Cleanup polling intervals and agent event sources on unmount
   useEffect(() => {
     return () => {
       pollingIntervals.current.forEach((interval) => {
         clearInterval(interval);
+      });
+      agentEventSources.current.forEach((eventSource) => {
+        eventSource.close();
       });
     };
   }, []);

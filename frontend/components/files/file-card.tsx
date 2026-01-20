@@ -11,6 +11,7 @@ import {
   Tags,
   Info,
   Trash2,
+  Sparkles,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,7 @@ interface FileCardProps {
   onMove?: (file: FileItem) => void;
   onManageTags?: (file: FileItem) => void;
   onViewMetadata?: (file: FileItem) => void;
+  onAIOrganize?: (file: FileItem) => void;
 }
 
 function formatFileSize(bytes?: number): string {
@@ -68,6 +70,7 @@ export function FileCard({
   onMove,
   onManageTags,
   onViewMetadata,
+  onAIOrganize,
 }: FileCardProps) {
   const router = useRouter();
   const [isHovered, setIsHovered] = useState(false);
@@ -127,7 +130,7 @@ export function FileCard({
           <ContextMenuTrigger asChild>
             <Card
               className={cn(
-                "cursor-pointer transition-all hover:shadow-md",
+                "h-full cursor-pointer transition-all hover:shadow-md",
                 selected && "ring-2 ring-primary",
                 isProcessing && "opacity-70",
               )}
@@ -174,20 +177,6 @@ export function FileCard({
                     {formatFileSize(file.size)}
                   </p>
 
-                  {/* Tags */}
-                  {file.tags && file.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 justify-center">
-                      {file.tags.slice(0, 2).map((tag) => (
-                        <TagBadge key={tag.id} tag={tag} className="text-xs" />
-                      ))}
-                      {file.tags.length > 2 && (
-                        <span className="text-xs text-muted-foreground">
-                          +{file.tags.length - 2}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
                   {/* Processing status indicator */}
                   {file.processing_status === "failed" && (
                     <span className="text-xs text-destructive">
@@ -214,14 +203,28 @@ export function FileCard({
           </ContextMenuTrigger>
         </TooltipTrigger>
 
-        {/* AI Summary tooltip */}
-        {file.summary && (
+        {/* Tooltip with tags and AI summary */}
+        {(file.summary || (file.tags && file.tags.length > 0)) && (
           <TooltipContent side="bottom" className="max-w-xs">
-            <div className="space-y-1">
-              <p className="font-medium text-xs">AI Summary</p>
-              <p className="text-xs text-muted-foreground break-all">
-                {file.summary}
-              </p>
+            <div className="space-y-2">
+              {file.tags && file.tags.length > 0 && (
+                <div className="space-y-1">
+                  <p className="font-medium text-xs">Tags</p>
+                  <div className="flex flex-wrap gap-1">
+                    {file.tags.map((tag) => (
+                      <TagBadge key={tag.id} tag={tag} className="text-xs" />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {file.summary && (
+                <div className="space-y-1">
+                  <p className="font-medium text-xs">AI Summary</p>
+                  <p className="text-xs text-muted-foreground break-all">
+                    {file.summary}
+                  </p>
+                </div>
+              )}
             </div>
           </TooltipContent>
         )}
@@ -250,6 +253,13 @@ export function FileCard({
         <ContextMenuItem onClick={() => onViewMetadata?.(file)}>
           <Info className="mr-2 h-4 w-4" />
           View metadata
+        </ContextMenuItem>
+
+        <ContextMenuSeparator />
+
+        <ContextMenuItem onClick={() => onAIOrganize?.(file)}>
+          <Sparkles className="mr-2 h-4 w-4" />
+          AI Organize
         </ContextMenuItem>
 
         <ContextMenuSeparator />

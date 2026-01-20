@@ -124,6 +124,7 @@ export function DndProvider({
   return (
     <DndProviderContext.Provider value={{ activeItem, overId }}>
       <DndContext
+        id="file-management-dnd"
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={handleDragStart}

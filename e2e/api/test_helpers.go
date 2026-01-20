@@ -50,6 +50,7 @@ func NewTestSetup(t *testing.T) *TestSetup {
 	contentParserService := services.NewMockContentParserService()
 	summaryService := services.NewMockSummaryService()
 	searchService := services.NewSearchService(db, embeddingService)
+	agentService := services.NewMockAgentService()
 
 	// Create API server
 	apiServer := api.NewAPIServer(
@@ -62,6 +63,7 @@ func NewTestSetup(t *testing.T) *TestSetup {
 		contentParserService,
 		searchService,
 		summaryService,
+		agentService,
 		nil, // No MCP server for tests
 	)
 

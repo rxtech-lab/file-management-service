@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -355,6 +356,30 @@ func (h *StrictHandlers) processFileAsync(userID string, fileID uint) {
 	if err := h.fileService.UpdateFileContent(userID, fileID, parsedContent.TextContent, summary, detectedFileType); err != nil {
 		h.fileService.UpdateFileProcessingStatus(userID, fileID, models.FileStatusFailed, "Failed to update content: "+err.Error())
 		return
+	}
+
+	// Run AI agent to organize file (best-effort, non-blocking errors)
+	if h.agentService != nil && h.agentService.IsEnabled() {
+		// Create event channel for logging
+		eventChan := make(chan services.AgentEvent, 100)
+		go func() {
+			for event := range eventChan {
+				// Log agent events for debugging
+				switch event.Type {
+				case "error":
+					log.Printf("[Agent] File %d error: %s", fileID, event.Message)
+				case "tool_call":
+					log.Printf("[Agent] File %d: %s", fileID, event.Message)
+				case "result":
+					log.Printf("[Agent] File %d completed: %s", fileID, event.Message)
+				}
+			}
+		}()
+
+		if err := h.agentService.ProcessFileWithAgent(ctx, userID, fileID, parsedContent.TextContent, summary, eventChan); err != nil {
+			log.Printf("[Agent] File %d processing warning: %v", fileID, err)
+			// Don't fail the file processing, agent is best-effort
+		}
 	}
 
 	// Generate embedding

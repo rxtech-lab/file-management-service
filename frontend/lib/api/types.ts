@@ -210,3 +210,32 @@ export interface MoveResponse {
   message: string;
   moved_count: number;
 }
+
+// Agent
+export type AgentEventType =
+  | "status"
+  | "tool_call"
+  | "tool_result"
+  | "thinking"
+  | "result"
+  | "error"
+  | "connected"
+  | "done";
+
+export interface AgentEvent {
+  type: AgentEventType;
+  message: string;
+  data?: unknown;
+  tool?: string;
+  file_id?: number;
+}
+
+export interface OrganizeFileResponse {
+  message: string;
+  file_id: number;
+  stream_url: string;
+}
+
+export interface AgentStatusResponse {
+  enabled: boolean;
+}

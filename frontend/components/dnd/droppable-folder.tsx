@@ -76,7 +76,7 @@ export function DroppableFolderTreeItem({
     <div
       ref={setNodeRef}
       className={cn(
-        "transition-colors duration-150 rounded",
+        "h-full transition-colors duration-150 rounded-xl",
         showDropIndicator && "bg-primary/10 ring-1 ring-primary",
         className,
       )}

@@ -35,6 +35,7 @@ type APIServer struct {
 	contentParserService   services.ContentParserService
 	searchService          services.SearchService
 	summaryService         services.SummaryService
+	agentService           services.AgentService
 	mcpServer              *mcpserver.MCPServer
 	mcprouterAuthenticator *auth.ApikeyAuthenticator
 	oauthAuthenticator     *middleware.OAuthAuthenticator
@@ -53,6 +54,7 @@ func NewAPIServer(
 	contentParserService services.ContentParserService,
 	searchService services.SearchService,
 	summaryService services.SummaryService,
+	agentService services.AgentService,
 	mcpServer *mcpserver.MCPServer,
 ) *APIServer {
 	app := fiber.New(fiber.Config{
@@ -125,6 +127,7 @@ func NewAPIServer(
 		contentParserService:   contentParserService,
 		searchService:          searchService,
 		summaryService:         summaryService,
+		agentService:           agentService,
 		mcpServer:              mcpServer,
 		mcprouterAuthenticator: mcprouterAuthenticator,
 		oauthAuthenticator:     oauthAuthenticator,
@@ -166,7 +169,11 @@ func (s *APIServer) SetupRoutes() {
 		s.contentParserService,
 		s.searchService,
 		s.summaryService,
+		s.agentService,
 	)
+
+	// Create agent handlers for SSE streaming
+	agentHandlers := handlers.NewAgentHandlers(s.agentService, s.fileService)
 
 	// Create strict handler wrapper (converts StrictServerInterface to ServerInterface)
 	strictHandler := generated.NewStrictHandler(strictHandlers, nil)
@@ -197,6 +204,12 @@ func (s *APIServer) SetupRoutes() {
 			},
 		},
 	})
+
+	// Register agent SSE routes (these need special handling for streaming)
+	// These routes require authentication
+	s.app.Get("/api/files/:id/agent-stream", agentHandlers.StreamAgentProgress)
+	s.app.Post("/api/files/:id/organize", agentHandlers.TriggerAgentOrganize)
+	s.app.Get("/api/agent/status", agentHandlers.GetAgentStatus)
 }
 
 // EnableAuthentication enables authentication middleware (OAuth and/or MCPRouter)

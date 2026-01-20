@@ -1,6 +1,6 @@
 "use client";
 
-import { X, RotateCcw, Check, Loader2, AlertCircle } from "lucide-react";
+import { X, RotateCcw, Check, Loader2, AlertCircle, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -36,6 +36,10 @@ function getStatusText(item: UploadQueueItem): string {
     case "creating":
       return "Creating file record...";
     case "processing":
+      // Show agent status if available
+      if (item.agentStatus) {
+        return item.agentStatus;
+      }
       if (item.processingStatus === "processing") {
         return "AI analyzing...";
       }
@@ -115,16 +119,19 @@ export function UploadQueueItemComponent({
           )}
 
           {/* Status text */}
-          <p
+          <div
             className={cn(
-              "text-xs mt-1",
+              "text-xs mt-1 flex items-center gap-1",
               item.status === "failed"
                 ? "text-destructive"
                 : "text-muted-foreground",
             )}
           >
-            {getStatusText(item)}
-          </p>
+            {item.status === "processing" && item.agentStatus && (
+              <Sparkles className="h-3 w-3 text-purple-500 animate-pulse" />
+            )}
+            <span>{getStatusText(item)}</span>
+          </div>
 
           {/* File size */}
           <p className="text-xs text-muted-foreground">

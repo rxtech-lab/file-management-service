@@ -12,6 +12,7 @@ import { FolderBreadcrumb } from "@/components/folders/folder-breadcrumb";
 import { CreateFolderDialog } from "@/components/folders/create-folder-dialog";
 import { UploadQueue } from "@/components/upload/upload-queue";
 import { FileMetadataSheet } from "@/components/files/file-metadata-sheet";
+import { AIOrganizeDialog } from "@/components/ai/ai-organize-dialog";
 import { DndProvider } from "@/components/dnd/dnd-provider";
 import { DroppableFolder } from "@/components/dnd/droppable-folder";
 import { useViewMode } from "@/hooks/use-view-mode";
@@ -51,6 +52,9 @@ export function FilesPageClient({
 
   // Metadata sheet state
   const [metadataFile, setMetadataFile] = useState<FileItem | null>(null);
+
+  // AI Organize dialog state
+  const [aiOrganizeFileId, setAiOrganizeFileId] = useState<number | null>(null);
 
   // File input ref for upload
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -146,6 +150,16 @@ export function FilesPageClient({
     console.log("Manage folder tags:", folder);
   };
 
+  // AI Organize handlers
+  const handleFileAIOrganize = (file: FileItem) => {
+    setAiOrganizeFileId(file.id);
+  };
+
+  const handleFolderAIOrganize = (folder: Folder) => {
+    // TODO: Implement folder AI organize (organize all files in folder)
+    toast.info("AI Organize for folders coming soon");
+  };
+
   // Empty space action handlers
   const handleNewFolder = () => {
     setShowCreateFolder(true);
@@ -195,9 +209,11 @@ export function FilesPageClient({
             onFileMove={handleFileMove}
             onFileManageTags={handleFileManageTags}
             onFileViewMetadata={handleFileViewMetadata}
+            onFileAIOrganize={handleFileAIOrganize}
             onFolderRename={handleFolderRename}
             onFolderMove={handleFolderMove}
             onFolderManageTags={handleFolderManageTags}
+            onFolderAIOrganize={handleFolderAIOrganize}
             onNewFolder={handleNewFolder}
             onUpload={handleUploadClick}
           />
@@ -215,9 +231,11 @@ export function FilesPageClient({
             onFileMove={handleFileMove}
             onFileManageTags={handleFileManageTags}
             onFileViewMetadata={handleFileViewMetadata}
+            onFileAIOrganize={handleFileAIOrganize}
             onFolderRename={handleFolderRename}
             onFolderMove={handleFolderMove}
             onFolderManageTags={handleFolderManageTags}
+            onFolderAIOrganize={handleFolderAIOrganize}
             onNewFolder={handleNewFolder}
             onUpload={handleUploadClick}
             onSelectAll={(selectAll) => {
@@ -259,6 +277,17 @@ export function FilesPageClient({
         open={metadataFile !== null}
         onOpenChange={(open) => {
           if (!open) setMetadataFile(null);
+        }}
+      />
+
+      <AIOrganizeDialog
+        fileId={aiOrganizeFileId}
+        open={aiOrganizeFileId !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setAiOrganizeFileId(null);
+            router.refresh();
+          }
         }}
       />
     </DndProvider>

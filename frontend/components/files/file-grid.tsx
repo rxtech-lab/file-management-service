@@ -24,10 +24,12 @@ interface FileGridProps {
   onFileMove?: (file: FileItem) => void;
   onFileManageTags?: (file: FileItem) => void;
   onFileViewMetadata?: (file: FileItem) => void;
+  onFileAIOrganize?: (file: FileItem) => void;
   // Folder actions
   onFolderRename?: (folder: Folder) => void;
   onFolderMove?: (folder: Folder) => void;
   onFolderManageTags?: (folder: Folder) => void;
+  onFolderAIOrganize?: (folder: Folder) => void;
   // Empty space actions
   onNewFolder?: () => void;
   onUpload?: () => void;
@@ -46,9 +48,11 @@ export function FileGrid({
   onFileMove,
   onFileManageTags,
   onFileViewMetadata,
+  onFileAIOrganize,
   onFolderRename,
   onFolderMove,
   onFolderManageTags,
+  onFolderAIOrganize,
   onNewFolder,
   onUpload,
 }: FileGridProps) {
@@ -77,6 +81,7 @@ export function FileGrid({
               onRename={onFolderRename}
               onMove={onFolderMove}
               onManageTags={onFolderManageTags}
+              onAIOrganize={onFolderAIOrganize}
             />
           </DroppableFolderTreeItem>
         </DraggableFolder>
@@ -94,6 +99,7 @@ export function FileGrid({
             onMove={onFileMove}
             onManageTags={onFileManageTags}
             onViewMetadata={onFileViewMetadata}
+            onAIOrganize={onFileAIOrganize}
           />
         </DraggableFile>
       ))}

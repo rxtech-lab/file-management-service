@@ -36,7 +36,7 @@ export function DraggableFile({
     <div
       ref={setNodeRef}
       style={style}
-      className={cn(isDragging && "opacity-50")}
+      className={cn("h-full rounded-xl", isDragging && "opacity-50")}
       {...listeners}
       {...attributes}
     >
@@ -76,7 +76,7 @@ export function DraggableFolder({
     <div
       ref={setNodeRef}
       style={style}
-      className={cn(isDragging && "opacity-50")}
+      className={cn("h-full rounded-xl", isDragging && "opacity-50")}
       {...listeners}
       {...attributes}
     >

@@ -696,6 +696,75 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/files/{id}/organize:
+    post:
+      tags:
+        - Files
+      summary: Trigger AI organization
+      description: Triggers the AI agent to organize a file (add tags, move to folder)
+      operationId: organizeFile
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: Organization started
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrganizeFileResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: AI agent is not enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/files/{id}/agent-stream:
+    get:
+      tags:
+        - Files
+      summary: Stream AI agent progress
+      description: Server-Sent Events stream for real-time AI agent progress updates
+      operationId: streamAgentProgress
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: SSE stream of agent events
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: AI agent is not enabled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/agent/status:
+    get:
+      tags:
+        - Files
+      summary: Get AI agent status
+      description: Returns whether the AI agent is enabled
+      operationId: getAgentStatus
+      responses:
+        '200':
+          description: Agent status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentStatusResponse'
+
   # Search
   /api/search:
     get:
@@ -1323,6 +1392,48 @@ components:
           type: string
         content_type:
           type: string
+
+    # Agent
+    OrganizeFileResponse:
+      type: object
+      required:
+        - message
+        - file_id
+        - stream_url
+      properties:
+        message:
+          type: string
+        file_id:
+          type: integer
+        stream_url:
+          type: string
+          description: URL to subscribe to SSE stream for progress updates
+
+    AgentStatusResponse:
+      type: object
+      required:
+        - enabled
+      properties:
+        enabled:
+          type: boolean
+
+    AgentEvent:
+      type: object
+      required:
+        - type
+        - message
+      properties:
+        type:
+          type: string
+          enum: [status, tool_call, tool_result, thinking, result, error, connected, done]
+        message:
+          type: string
+        data:
+          type: object
+        tool:
+          type: string
+        file_id:
+          type: integer
 
 security:
   - BearerAuth: []

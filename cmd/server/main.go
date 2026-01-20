@@ -45,6 +45,7 @@ func main() {
 	contentParserService := initContentParserService()
 	summaryService := initSummaryService()
 	searchService := services.NewSearchService(db, embeddingService)
+	agentService := initAgentService(tagService, fileService, folderService)
 
 	// Initialize MCP server
 	mcpSrv := mcpserver.NewMCPServer(
@@ -68,6 +69,7 @@ func main() {
 		contentParserService,
 		searchService,
 		summaryService,
+		agentService,
 		mcpSrv.GetServer(),
 	)
 
@@ -202,6 +204,41 @@ func initSummaryService() services.SummaryService {
 
 	log.Printf("Summary service initialized (model: %s)", model)
 	return services.NewSummaryService(config)
+}
+
+func initAgentService(
+	tagService services.TagService,
+	fileService services.FileService,
+	folderService services.FolderService,
+) services.AgentService {
+	// Check if agent is enabled (default: true)
+	enabled := os.Getenv("AGENT_ENABLED") != "false"
+	if !enabled {
+		log.Println("AI Agent service disabled")
+		return nil
+	}
+
+	gatewayURL := os.Getenv("AI_GATEWAY_URL")
+	apiKey := os.Getenv("AI_GATEWAY_API_KEY")
+	model := getEnvOrDefault("AGENT_MODEL", "gpt-4o-mini")
+
+	maxTurns := 10
+	if maxTurnsStr := os.Getenv("AGENT_MAX_TURNS"); maxTurnsStr != "" {
+		if mt, err := strconv.Atoi(maxTurnsStr); err == nil && mt > 0 {
+			maxTurns = mt
+		}
+	}
+
+	config := services.AgentConfig{
+		GatewayURL: gatewayURL,
+		APIKey:     apiKey,
+		Model:      model,
+		MaxTurns:   maxTurns,
+		Enabled:    enabled,
+	}
+
+	log.Printf("AI Agent service initialized (model: %s, maxTurns: %d)", model, maxTurns)
+	return services.NewAgentService(config, tagService, fileService, folderService)
 }
 
 func getEnvOrDefault(key, defaultValue string) string {

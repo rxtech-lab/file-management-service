@@ -58,7 +58,7 @@ export function FolderTreeItem({
             >
               <ChevronRight
                 className={cn(
-                  "h-4 w-4 shrink-0 transition-transform",
+                  "h-4 w-4 shrink-0 transition-transform group-data-[collapsible=icon]:hidden",
                   isOpen && "rotate-90",
                 )}
                 onClick={(e) => {
@@ -94,7 +94,7 @@ export function FolderTreeItem({
         onClick={handleClick}
         onContextMenu={handleContextMenu}
       >
-        <span className="w-4" /> {/* Spacer for alignment */}
+        <span className="w-4 group-data-[collapsible=icon]:hidden" /> {/* Spacer for alignment */}
         <FolderIcon className="h-4 w-4 shrink-0 text-yellow-500" />
         <span className="truncate">{folder.name}</span>
       </SidebarMenuButton>
