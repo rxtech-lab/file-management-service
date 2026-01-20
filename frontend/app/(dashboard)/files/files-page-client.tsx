@@ -27,6 +27,7 @@ interface FilesPageClientProps {
   initialFolders: Folder[];
   currentFolder: Folder | null;
   ancestors?: Folder[];
+  highlightFileId?: number;
 }
 
 export function FilesPageClient({
@@ -34,6 +35,7 @@ export function FilesPageClient({
   initialFolders,
   currentFolder,
   ancestors = [],
+  highlightFileId,
 }: FilesPageClientProps) {
   const router = useRouter();
   const { viewMode, setViewMode, isGrid } = useViewMode();
@@ -201,6 +203,7 @@ export function FilesPageClient({
             folders={initialFolders}
             selectedFileIds={selectedFileIds}
             selectedFolderIds={selectedFolderIds}
+            highlightFileId={highlightFileId}
             onSelectFile={selectFile}
             onSelectFolder={selectFolder}
             onFileClick={handleFileClick}
@@ -223,6 +226,7 @@ export function FilesPageClient({
             folders={initialFolders}
             selectedFileIds={selectedFileIds}
             selectedFolderIds={selectedFolderIds}
+            highlightFileId={highlightFileId}
             onSelectFile={selectFile}
             onSelectFolder={selectFolder}
             onFileClick={handleFileClick}

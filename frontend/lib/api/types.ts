@@ -239,3 +239,34 @@ export interface OrganizeFileResponse {
 export interface AgentStatusResponse {
   enabled: boolean;
 }
+
+// Agent Search Types
+export interface AgentSearchMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  toolCalls?: AgentSearchToolCall[];
+  files?: FileSearchResult[];
+  createdAt: Date;
+}
+
+export interface AgentSearchToolCall {
+  id: string;
+  name: string;
+  args: Record<string, unknown>;
+  result?: unknown;
+  status: "pending" | "calling" | "completed" | "error";
+}
+
+export interface AgentSearchProgress {
+  status: "idle" | "thinking" | "calling" | "complete" | "error";
+  message?: string;
+  toolName?: string;
+  toolArgs?: Record<string, unknown>;
+  toolResult?: unknown;
+}
+
+export interface FileSearchResult {
+  file: FileItem;
+  description: string;
+}

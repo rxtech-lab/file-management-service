@@ -9,6 +9,7 @@ import type { Folder } from "@/lib/api/types";
 
 interface FolderPageProps {
   params: Promise<{ folderId: string }>;
+  searchParams: Promise<{ highlight?: string }>;
 }
 
 // Helper function to build ancestor chain
@@ -29,9 +30,11 @@ async function getAncestors(folder: Folder): Promise<Folder[]> {
   return ancestors;
 }
 
-export default async function FolderPage({ params }: FolderPageProps) {
+export default async function FolderPage({ params, searchParams }: FolderPageProps) {
   const { folderId } = await params;
+  const { highlight } = await searchParams;
   const folderIdNum = parseInt(folderId, 10);
+  const highlightId = highlight ? parseInt(highlight, 10) : undefined;
 
   if (isNaN(folderIdNum)) {
     notFound();
@@ -63,6 +66,7 @@ export default async function FolderPage({ params }: FolderPageProps) {
       initialFolders={folders}
       currentFolder={currentFolder}
       ancestors={ancestors}
+      highlightFileId={highlightId}
     />
   );
 }

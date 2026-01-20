@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   Folder as FolderIcon,
@@ -51,6 +52,7 @@ interface FileListProps {
   folders: Folder[];
   selectedFileIds: Set<number>;
   selectedFolderIds: Set<number>;
+  highlightFileId?: number;
   onSelectFile?: (file: FileItem, multi?: boolean) => void;
   onSelectFolder?: (folder: Folder, multi?: boolean) => void;
   onFileClick?: (file: FileItem) => void;
@@ -89,6 +91,7 @@ export function FileList({
   folders,
   selectedFileIds,
   selectedFolderIds,
+  highlightFileId,
   onSelectFile,
   onSelectFolder,
   onFileClick,
@@ -306,148 +309,199 @@ export function FileList({
             const isProcessing =
               file.processing_status === "pending" ||
               file.processing_status === "processing";
+            const isHighlighted = highlightFileId === file.id;
 
             return (
-              <ContextMenu key={`file-${file.id}`}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <ContextMenuTrigger asChild>
-                      <TableRow
-                        className={cn(
-                          "cursor-pointer",
-                          selectedFileIds.has(file.id) && "bg-muted",
-                          isProcessing && "opacity-70",
-                        )}
-                        onClick={(e) => {
-                          onSelectFile?.(file, e.metaKey || e.ctrlKey);
-                          onFileClick?.(file);
-                        }}
-                      >
-                        <TableCell>
-                          <Checkbox
-                            checked={selectedFileIds.has(file.id)}
-                            onClick={(e) => e.stopPropagation()}
-                            onCheckedChange={() => onSelectFile?.(file, true)}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <div
-                              className={cn(
-                                "relative",
-                                getFileTypeColor(
-                                  file.file_type,
-                                  file.mime_type,
-                                ),
-                              )}
-                            >
-                              <FileTypeIcon
-                                fileType={file.file_type}
-                                mimeType={file.mime_type}
-                                className="h-5 w-5"
-                              />
-                              {isProcessing && (
-                                <Loader2 className="h-3 w-3 absolute -bottom-1 -right-1 animate-spin" />
-                              )}
-                            </div>
-                            <div>
-                              <span className="font-medium">{file.title}</span>
-                              {file.title !== file.original_filename && (
-                                <span className="text-xs text-muted-foreground ml-2">
-                                  ({file.original_filename})
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {formatFileSize(file.size)}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {formatDate(new Date(file.updated_at))}
-                        </TableCell>
-                        <TableCell>
-                          {file.tags && file.tags.length > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                              {file.tags.slice(0, 2).map((tag) => (
-                                <TagBadge
-                                  key={tag.id}
-                                  tag={tag}
-                                  className="text-xs"
-                                />
-                              ))}
-                              {file.tags.length > 2 && (
-                                <span className="text-xs text-muted-foreground">
-                                  +{file.tags.length - 2}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    </ContextMenuTrigger>
-                  </TooltipTrigger>
-
-                  {/* AI Summary tooltip */}
-                  {file.summary && (
-                    <TooltipContent side="bottom" className="max-w-xs">
-                      <div className="space-y-1">
-                        <p className="font-medium text-xs">AI Summary</p>
-                        <p className="text-xs text-muted-foreground break-all">
-                          {file.summary}
-                        </p>
-                      </div>
-                    </TooltipContent>
-                  )}
-                </Tooltip>
-
-                <ContextMenuContent className="w-48">
-                  <ContextMenuItem onClick={() => onFileRename?.(file)}>
-                    <Pencil className="mr-2 h-4 w-4" />
-                    Rename
-                  </ContextMenuItem>
-                  <ContextMenuItem onClick={() => onFileMove?.(file)}>
-                    <FolderInput className="mr-2 h-4 w-4" />
-                    Move to...
-                  </ContextMenuItem>
-                  <ContextMenuItem onClick={() => handleFileDownload(file)}>
-                    <Download className="mr-2 h-4 w-4" />
-                    Download
-                  </ContextMenuItem>
-
-                  <ContextMenuSeparator />
-
-                  <ContextMenuItem onClick={() => onFileManageTags?.(file)}>
-                    <Tags className="mr-2 h-4 w-4" />
-                    Add tags...
-                  </ContextMenuItem>
-                  <ContextMenuItem onClick={() => onFileViewMetadata?.(file)}>
-                    <Info className="mr-2 h-4 w-4" />
-                    View metadata
-                  </ContextMenuItem>
-
-                  <ContextMenuSeparator />
-
-                  <ContextMenuItem onClick={() => onFileAIOrganize?.(file)}>
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    AI Organize
-                  </ContextMenuItem>
-
-                  <ContextMenuSeparator />
-
-                  <ContextMenuItem
-                    onClick={() => handleFileDelete(file)}
-                    variant="destructive"
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Delete
-                  </ContextMenuItem>
-                </ContextMenuContent>
-              </ContextMenu>
+              <FileTableRow
+                key={`file-${file.id}`}
+                file={file}
+                isProcessing={isProcessing}
+                isHighlighted={isHighlighted}
+                isSelected={selectedFileIds.has(file.id)}
+                onSelect={onSelectFile}
+                onClick={onFileClick}
+                onRename={onFileRename}
+                onMove={onFileMove}
+                onManageTags={onFileManageTags}
+                onViewMetadata={onFileViewMetadata}
+                onAIOrganize={onFileAIOrganize}
+                onDownload={handleFileDownload}
+                onDelete={handleFileDelete}
+              />
             );
           })}
         </TableBody>
       </Table>
     </EmptyContextMenuWrapper>
+  );
+}
+
+function FileTableRow({
+  file,
+  isProcessing,
+  isHighlighted,
+  isSelected,
+  onSelect,
+  onClick,
+  onRename,
+  onMove,
+  onManageTags,
+  onViewMetadata,
+  onAIOrganize,
+  onDownload,
+  onDelete,
+}: {
+  file: FileItem;
+  isProcessing: boolean;
+  isHighlighted: boolean;
+  isSelected: boolean;
+  onSelect?: (file: FileItem, multi?: boolean) => void;
+  onClick?: (file: FileItem) => void;
+  onRename?: (file: FileItem) => void;
+  onMove?: (file: FileItem) => void;
+  onManageTags?: (file: FileItem) => void;
+  onViewMetadata?: (file: FileItem) => void;
+  onAIOrganize?: (file: FileItem) => void;
+  onDownload: (file: FileItem) => void;
+  onDelete: (file: FileItem) => void;
+}) {
+  const rowRef = useRef<HTMLTableRowElement>(null);
+
+  // Handle highlight animation and scroll into view
+  useEffect(() => {
+    if (isHighlighted && rowRef.current) {
+      rowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [isHighlighted]);
+
+  return (
+    <ContextMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <ContextMenuTrigger asChild>
+            <TableRow
+              ref={rowRef}
+              className={cn(
+                "cursor-pointer",
+                isSelected && "bg-muted",
+                isProcessing && "opacity-70",
+                isHighlighted && "animate-pulse bg-yellow-50 dark:bg-yellow-950/20",
+              )}
+              onClick={(e) => {
+                onSelect?.(file, e.metaKey || e.ctrlKey);
+                onClick?.(file);
+              }}
+            >
+              <TableCell>
+                <Checkbox
+                  checked={isSelected}
+                  onClick={(e) => e.stopPropagation()}
+                  onCheckedChange={() => onSelect?.(file, true)}
+                />
+              </TableCell>
+              <TableCell>
+                <div className="flex items-center gap-2">
+                  <div
+                    className={cn(
+                      "relative",
+                      getFileTypeColor(file.file_type, file.mime_type)
+                    )}
+                  >
+                    <FileTypeIcon
+                      fileType={file.file_type}
+                      mimeType={file.mime_type}
+                      className="h-5 w-5"
+                    />
+                    {isProcessing && (
+                      <Loader2 className="h-3 w-3 absolute -bottom-1 -right-1 animate-spin" />
+                    )}
+                  </div>
+                  <div>
+                    <span className="font-medium">{file.title}</span>
+                    {file.title !== file.original_filename && (
+                      <span className="text-xs text-muted-foreground ml-2">
+                        ({file.original_filename})
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </TableCell>
+              <TableCell className="text-muted-foreground">
+                {formatFileSize(file.size)}
+              </TableCell>
+              <TableCell className="text-muted-foreground">
+                {formatDate(new Date(file.updated_at))}
+              </TableCell>
+              <TableCell>
+                {file.tags && file.tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {file.tags.slice(0, 2).map((tag) => (
+                      <TagBadge key={tag.id} tag={tag} className="text-xs" />
+                    ))}
+                    {file.tags.length > 2 && (
+                      <span className="text-xs text-muted-foreground">
+                        +{file.tags.length - 2}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </TableCell>
+            </TableRow>
+          </ContextMenuTrigger>
+        </TooltipTrigger>
+
+        {/* AI Summary tooltip */}
+        {file.summary && (
+          <TooltipContent side="bottom" className="max-w-xs">
+            <div className="space-y-1">
+              <p className="font-medium text-xs">AI Summary</p>
+              <p className="text-xs text-muted-foreground break-all">
+                {file.summary}
+              </p>
+            </div>
+          </TooltipContent>
+        )}
+      </Tooltip>
+
+      <ContextMenuContent className="w-48">
+        <ContextMenuItem onClick={() => onRename?.(file)}>
+          <Pencil className="mr-2 h-4 w-4" />
+          Rename
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => onMove?.(file)}>
+          <FolderInput className="mr-2 h-4 w-4" />
+          Move to...
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => onDownload(file)}>
+          <Download className="mr-2 h-4 w-4" />
+          Download
+        </ContextMenuItem>
+
+        <ContextMenuSeparator />
+
+        <ContextMenuItem onClick={() => onManageTags?.(file)}>
+          <Tags className="mr-2 h-4 w-4" />
+          Add tags...
+        </ContextMenuItem>
+        <ContextMenuItem onClick={() => onViewMetadata?.(file)}>
+          <Info className="mr-2 h-4 w-4" />
+          View metadata
+        </ContextMenuItem>
+
+        <ContextMenuSeparator />
+
+        <ContextMenuItem onClick={() => onAIOrganize?.(file)}>
+          <Sparkles className="mr-2 h-4 w-4" />
+          AI Organize
+        </ContextMenuItem>
+
+        <ContextMenuSeparator />
+
+        <ContextMenuItem onClick={() => onDelete(file)} variant="destructive">
+          <Trash2 className="mr-2 h-4 w-4" />
+          Delete
+        </ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

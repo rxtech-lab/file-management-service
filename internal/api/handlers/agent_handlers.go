@@ -65,8 +65,9 @@ func (h *AgentHandlers) StreamAgentProgress(c *fiber.Ctx) error {
 	c.Set("X-Accel-Buffering", "no") // Disable nginx buffering
 
 	// Create context with timeout
+	// NOTE: Don't defer cancel() here - it must be called inside SetBodyStreamWriter
+	// because the handler returns immediately while streaming continues asynchronously
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
 
 	// Create event channel
 	eventChan := make(chan services.AgentEvent, 100)
@@ -86,6 +87,8 @@ func (h *AgentHandlers) StreamAgentProgress(c *fiber.Ctx) error {
 
 	// Stream events to client
 	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		defer cancel() // Cancel context when streaming ends
+
 		// Send initial connection event
 		data, _ := json.Marshal(services.AgentEvent{
 			Type:    "connected",

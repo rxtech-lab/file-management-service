@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import {
   MoreHorizontal,
@@ -40,6 +40,7 @@ import { cn } from "@/lib/utils";
 interface FileCardProps {
   file: FileItem;
   selected?: boolean;
+  highlighted?: boolean;
   onSelect?: (file: FileItem, multi?: boolean) => void;
   onClick?: (file: FileItem) => void;
   onRename?: (file: FileItem) => void;
@@ -64,6 +65,7 @@ function formatFileSize(bytes?: number): string {
 export function FileCard({
   file,
   selected,
+  highlighted,
   onSelect,
   onClick,
   onRename,
@@ -74,6 +76,31 @@ export function FileCard({
 }: FileCardProps) {
   const router = useRouter();
   const [isHovered, setIsHovered] = useState(false);
+  const [isHighlightAnimating, setIsHighlightAnimating] = useState(false);
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  // Handle highlight animation
+  useEffect(() => {
+    if (highlighted) {
+      // Defer state updates to avoid cascading renders
+      const startTimer = setTimeout(() => {
+        setIsHighlightAnimating(true);
+      }, 0);
+      
+      // Scroll into view
+      cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      
+      // Stop animation after 3 pulses (1.5s)
+      const endTimer = setTimeout(() => {
+        setIsHighlightAnimating(false);
+      }, 1500);
+      
+      return () => {
+        clearTimeout(startTimer);
+        clearTimeout(endTimer);
+      };
+    }
+  }, [highlighted]);
 
   const handleClick = (e: React.MouseEvent) => {
     if (onSelect) {
@@ -129,10 +156,13 @@ export function FileCard({
         <TooltipTrigger asChild>
           <ContextMenuTrigger asChild>
             <Card
+              ref={cardRef}
               className={cn(
                 "h-full cursor-pointer transition-all hover:shadow-md",
                 selected && "ring-2 ring-primary",
                 isProcessing && "opacity-70",
+                isHighlightAnimating && "animate-pulse ring-2 ring-yellow-400 bg-yellow-50 dark:bg-yellow-950/20",
+                highlighted && !isHighlightAnimating && "ring-2 ring-yellow-400/50",
               )}
               onClick={handleClick}
               onMouseEnter={() => setIsHovered(true)}

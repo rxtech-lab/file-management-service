@@ -15,6 +15,7 @@ interface FileGridProps {
   folders: Folder[];
   selectedFileIds: Set<number>;
   selectedFolderIds: Set<number>;
+  highlightFileId?: number;
   onSelectFile?: (file: FileItem, multi?: boolean) => void;
   onSelectFolder?: (folder: Folder, multi?: boolean) => void;
   onFileClick?: (file: FileItem) => void;
@@ -40,6 +41,7 @@ export function FileGrid({
   folders,
   selectedFileIds,
   selectedFolderIds,
+  highlightFileId,
   onSelectFile,
   onSelectFolder,
   onFileClick,
@@ -93,6 +95,7 @@ export function FileGrid({
           <FileCard
             file={file}
             selected={selectedFileIds.has(file.id)}
+            highlighted={highlightFileId === file.id}
             onSelect={onSelectFile}
             onClick={onFileClick}
             onRename={onFileRename}
@@ -109,8 +112,8 @@ export function FileGrid({
   return (
     <EmptyContextMenuWrapper
       className="flex-1 p-4 overflow-auto"
-      onNewFolder={onNewFolder ?? (() => {})}
-      onUpload={onUpload ?? (() => {})}
+      onNewFolder={onNewFolder ?? (() => { })}
+      onUpload={onUpload ?? (() => { })}
     >
       {content}
     </EmptyContextMenuWrapper>
