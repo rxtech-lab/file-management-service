@@ -1,0 +1,1328 @@
+openapi: 3.0.3
+info:
+  title: File Management API
+  description: API for managing files, folders, tags, and semantic search
+  version: 1.0.0
+  contact:
+    name: RxTech Lab
+    url: https://github.com/rxtech-lab/files-management
+
+servers:
+  - url: /api
+    description: API server
+
+tags:
+  - name: Tags
+    description: Tag management
+  - name: Folders
+    description: Folder management
+  - name: Files
+    description: File management
+  - name: Search
+    description: File search operations
+  - name: Upload
+    description: File upload operations
+  - name: Health
+    description: Health check endpoints
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Returns the health status of the service
+      operationId: healthCheck
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+
+  # Tags
+  /api/tags:
+    get:
+      tags:
+        - Tags
+      summary: List tags
+      description: Returns a paginated list of tags with optional search
+      operationId: listTags
+      parameters:
+        - name: keyword
+          in: query
+          description: Search keyword for tag name
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: List of tags
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TagListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Tags
+      summary: Create tag
+      description: Creates a new tag
+      operationId: createTag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTagRequest'
+      responses:
+        '201':
+          description: Tag created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/tags/{id}:
+    get:
+      tags:
+        - Tags
+      summary: Get tag
+      description: Returns a tag by ID
+      operationId: getTag
+      parameters:
+        - $ref: '#/components/parameters/TagId'
+      responses:
+        '200':
+          description: Tag details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tag'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    put:
+      tags:
+        - Tags
+      summary: Update tag
+      description: Updates an existing tag
+      operationId: updateTag
+      parameters:
+        - $ref: '#/components/parameters/TagId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateTagRequest'
+      responses:
+        '200':
+          description: Tag updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Tag'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      tags:
+        - Tags
+      summary: Delete tag
+      description: Deletes a tag
+      operationId: deleteTag
+      parameters:
+        - $ref: '#/components/parameters/TagId'
+      responses:
+        '204':
+          description: Tag deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Folders
+  /api/folders:
+    get:
+      tags:
+        - Folders
+      summary: List folders
+      description: Returns a paginated list of folders with optional filtering
+      operationId: listFolders
+      parameters:
+        - name: keyword
+          in: query
+          description: Search keyword for folder name
+          schema:
+            type: string
+        - name: parent_id
+          in: query
+          description: Filter by parent folder ID (omit for root folders)
+          schema:
+            type: integer
+        - name: tag_ids
+          in: query
+          description: Filter by tag IDs (comma-separated)
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: List of folders
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FolderListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Folders
+      summary: Create folder
+      description: Creates a new folder
+      operationId: createFolder
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFolderRequest'
+      responses:
+        '201':
+          description: Folder created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Folder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/folders/tree:
+    get:
+      tags:
+        - Folders
+      summary: Get folder tree
+      description: Returns the complete folder tree structure
+      operationId: getFolderTree
+      parameters:
+        - name: parent_id
+          in: query
+          description: Start from this parent folder (omit for full tree from root)
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Folder tree
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FolderTree'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/folders/{id}:
+    get:
+      tags:
+        - Folders
+      summary: Get folder
+      description: Returns a folder by ID with children and tags
+      operationId: getFolder
+      parameters:
+        - $ref: '#/components/parameters/FolderId'
+      responses:
+        '200':
+          description: Folder details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Folder'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    put:
+      tags:
+        - Folders
+      summary: Update folder
+      description: Updates an existing folder
+      operationId: updateFolder
+      parameters:
+        - $ref: '#/components/parameters/FolderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFolderRequest'
+      responses:
+        '200':
+          description: Folder updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Folder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      tags:
+        - Folders
+      summary: Delete folder
+      description: Deletes a folder and all its contents recursively
+      operationId: deleteFolder
+      parameters:
+        - $ref: '#/components/parameters/FolderId'
+      responses:
+        '204':
+          description: Folder deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/folders/{id}/move:
+    post:
+      tags:
+        - Folders
+      summary: Move folder
+      description: Moves a folder to a new parent
+      operationId: moveFolder
+      parameters:
+        - $ref: '#/components/parameters/FolderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveFolderRequest'
+      responses:
+        '200':
+          description: Folder moved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Folder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/folders/{id}/tags:
+    post:
+      tags:
+        - Folders
+      summary: Add tags to folder
+      description: Adds tags to a folder
+      operationId: addTagsToFolder
+      parameters:
+        - $ref: '#/components/parameters/FolderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagIdsRequest'
+      responses:
+        '200':
+          description: Tags added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Folder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      tags:
+        - Folders
+      summary: Remove tags from folder
+      description: Removes tags from a folder
+      operationId: removeTagsFromFolder
+      parameters:
+        - $ref: '#/components/parameters/FolderId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagIdsRequest'
+      responses:
+        '200':
+          description: Tags removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Folder'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Files
+  /api/files:
+    get:
+      tags:
+        - Files
+      summary: List files
+      description: Returns a paginated list of files with filtering
+      operationId: listFiles
+      parameters:
+        - name: keyword
+          in: query
+          description: Search keyword for title, summary, or content
+          schema:
+            type: string
+        - name: folder_id
+          in: query
+          description: Filter by folder ID
+          schema:
+            type: integer
+        - name: file_type
+          in: query
+          description: Filter by file type
+          schema:
+            $ref: '#/components/schemas/FileType'
+        - name: tag_ids
+          in: query
+          description: Filter by tag IDs (comma-separated)
+          schema:
+            type: string
+        - name: status
+          in: query
+          description: Filter by processing status
+          schema:
+            $ref: '#/components/schemas/ProcessingStatus'
+        - name: sort_by
+          in: query
+          description: Field to sort by
+          schema:
+            type: string
+            enum: [created_at, updated_at, title, size]
+            default: created_at
+        - name: sort_order
+          in: query
+          description: Sort order
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: List of files
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileListResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags:
+        - Files
+      summary: Create file
+      description: Creates a new file record (after S3 upload)
+      operationId: createFile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateFileRequest'
+      responses:
+        '201':
+          description: File created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/File'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/files/move:
+    post:
+      tags:
+        - Files
+      summary: Move files
+      description: Moves multiple files to a target folder
+      operationId: moveFiles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MoveFilesRequest'
+      responses:
+        '200':
+          description: Files moved
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - message
+                  - moved_count
+                properties:
+                  message:
+                    type: string
+                  moved_count:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/files/batch-download:
+    post:
+      tags:
+        - Files
+      summary: Batch download files as ZIP
+      description: Downloads multiple files as a ZIP archive (streaming)
+      operationId: batchDownloadFiles
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchDownloadRequest'
+      responses:
+        '200':
+          description: ZIP file stream
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/files/{id}:
+    get:
+      tags:
+        - Files
+      summary: Get file
+      description: Returns a file by ID with folder and tags
+      operationId: getFile
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: File details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/File'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    put:
+      tags:
+        - Files
+      summary: Update file
+      description: Updates file metadata
+      operationId: updateFile
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateFileRequest'
+      responses:
+        '200':
+          description: File updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/File'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      tags:
+        - Files
+      summary: Delete file
+      description: Deletes a file and its S3 object
+      operationId: deleteFile
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '204':
+          description: File deleted
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/files/{id}/process:
+    post:
+      tags:
+        - Files
+      summary: Process file
+      description: Triggers asynchronous content parsing and embedding generation
+      operationId: processFile
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '202':
+          description: Processing started
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - message
+                  - status
+                properties:
+                  message:
+                    type: string
+                  status:
+                    $ref: '#/components/schemas/ProcessingStatus'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/files/{id}/download:
+    get:
+      tags:
+        - Files
+      summary: Get file download URL
+      description: Returns a presigned download URL for the file
+      operationId: getFileDownloadURL
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      responses:
+        '200':
+          description: Download URL generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileDownloadResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/files/{id}/tags:
+    post:
+      tags:
+        - Files
+      summary: Add tags to file
+      description: Adds tags to a file
+      operationId: addTagsToFile
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagIdsRequest'
+      responses:
+        '200':
+          description: Tags added
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/File'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      tags:
+        - Files
+      summary: Remove tags from file
+      description: Removes tags from a file
+      operationId: removeTagsFromFile
+      parameters:
+        - $ref: '#/components/parameters/FileId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagIdsRequest'
+      responses:
+        '200':
+          description: Tags removed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/File'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Search
+  /api/search:
+    get:
+      tags:
+        - Search
+      summary: Search files
+      description: Searches files using full-text, semantic, or hybrid search
+      operationId: searchFiles
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Search query
+          schema:
+            type: string
+        - name: type
+          in: query
+          description: Search type
+          schema:
+            type: string
+            enum: [fulltext, semantic, hybrid]
+            default: hybrid
+        - name: folder_id
+          in: query
+          description: Limit search to a folder
+          schema:
+            type: integer
+        - name: file_type
+          in: query
+          description: Filter by file type
+          schema:
+            $ref: '#/components/schemas/FileType'
+        - name: tag_ids
+          in: query
+          description: Filter by tag IDs (comma-separated)
+          schema:
+            type: string
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  # Upload
+  /api/upload:
+    post:
+      tags:
+        - Upload
+      summary: Upload file
+      description: Uploads a file to S3-compatible storage
+      operationId: uploadFile
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: File to upload
+      responses:
+        '201':
+          description: File uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/upload/presigned:
+    get:
+      tags:
+        - Upload
+      summary: Get presigned upload URL
+      description: Generates a presigned URL for direct upload to S3
+      operationId: getPresignedURL
+      parameters:
+        - name: filename
+          in: query
+          required: true
+          description: Name of the file to upload
+          schema:
+            type: string
+        - name: content_type
+          in: query
+          description: MIME type of the file
+          schema:
+            type: string
+            default: application/octet-stream
+      responses:
+        '200':
+          description: Presigned URL generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PresignedURLResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT Bearer token authentication
+
+  parameters:
+    TagId:
+      name: id
+      in: path
+      required: true
+      description: Tag ID
+      schema:
+        type: integer
+
+    FolderId:
+      name: id
+      in: path
+      required: true
+      description: Folder ID
+      schema:
+        type: integer
+
+    FileId:
+      name: id
+      in: path
+      required: true
+      description: File ID
+      schema:
+        type: integer
+
+    Limit:
+      name: limit
+      in: query
+      description: Maximum number of items to return
+      schema:
+        type: integer
+        default: 50
+        minimum: 1
+        maximum: 100
+
+    Offset:
+      name: offset
+      in: query
+      description: Number of items to skip
+      schema:
+        type: integer
+        default: 0
+        minimum: 0
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Error message
+
+    # Tags
+    Tag:
+      type: object
+      required:
+        - id
+        - user_id
+        - name
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: string
+        name:
+          type: string
+        color:
+          type: string
+          description: Hex color code (e.g., #FF5733)
+        description:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateTagRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        color:
+          type: string
+        description:
+          type: string
+
+    UpdateTagRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        color:
+          type: string
+        description:
+          type: string
+
+    TagListResponse:
+      type: object
+      required:
+        - data
+        - total
+        - limit
+        - offset
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    TagIdsRequest:
+      type: object
+      required:
+        - tag_ids
+      properties:
+        tag_ids:
+          type: array
+          items:
+            type: integer
+
+    # Folders
+    Folder:
+      type: object
+      required:
+        - id
+        - user_id
+        - name
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        parent_id:
+          type: integer
+          nullable: true
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/Folder'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    FolderTree:
+      type: object
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        parent_id:
+          type: integer
+          nullable: true
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/FolderTree'
+
+    CreateFolderRequest:
+      type: object
+      required:
+        - name
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        parent_id:
+          type: integer
+          nullable: true
+
+    UpdateFolderRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+
+    MoveFolderRequest:
+      type: object
+      properties:
+        parent_id:
+          type: integer
+          nullable: true
+          description: New parent folder ID (null for root)
+
+    FolderListResponse:
+      type: object
+      required:
+        - data
+        - total
+        - limit
+        - offset
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Folder'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    # Files
+    FileType:
+      type: string
+      enum:
+        - music
+        - photo
+        - video
+        - document
+        - invoice
+
+    ProcessingStatus:
+      type: string
+      enum:
+        - pending
+        - processing
+        - completed
+        - failed
+
+    File:
+      type: object
+      required:
+        - id
+        - user_id
+        - title
+        - s3_key
+        - original_filename
+        - file_type
+        - processing_status
+        - has_embedding
+        - created_at
+        - updated_at
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        content:
+          type: string
+          description: Parsed text content
+        file_type:
+          $ref: '#/components/schemas/FileType'
+        folder_id:
+          type: integer
+          nullable: true
+        folder:
+          $ref: '#/components/schemas/Folder'
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tag'
+        s3_key:
+          type: string
+        original_filename:
+          type: string
+        mime_type:
+          type: string
+        size:
+          type: integer
+          format: int64
+        processing_status:
+          $ref: '#/components/schemas/ProcessingStatus'
+        processing_error:
+          type: string
+        has_embedding:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    CreateFileRequest:
+      type: object
+      required:
+        - title
+        - s3_key
+        - original_filename
+      properties:
+        title:
+          type: string
+        s3_key:
+          type: string
+        original_filename:
+          type: string
+        mime_type:
+          type: string
+        size:
+          type: integer
+          format: int64
+        folder_id:
+          type: integer
+          nullable: true
+        file_type:
+          $ref: '#/components/schemas/FileType'
+
+    UpdateFileRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        summary:
+          type: string
+        file_type:
+          $ref: '#/components/schemas/FileType'
+        folder_id:
+          type: integer
+          nullable: true
+
+    MoveFilesRequest:
+      type: object
+      required:
+        - file_ids
+      properties:
+        file_ids:
+          type: array
+          items:
+            type: integer
+        folder_id:
+          type: integer
+          nullable: true
+          description: Target folder ID (null for root)
+
+    BatchDownloadRequest:
+      type: object
+      required:
+        - file_ids
+      properties:
+        file_ids:
+          type: array
+          items:
+            type: integer
+          description: Array of file IDs to download
+
+    FileListResponse:
+      type: object
+      required:
+        - data
+        - total
+        - limit
+        - offset
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/File'
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    FileDownloadResponse:
+      type: object
+      required:
+        - download_url
+        - key
+        - filename
+        - expires_at
+      properties:
+        download_url:
+          type: string
+          format: uri
+        key:
+          type: string
+        filename:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+
+    # Search
+    SearchResult:
+      type: object
+      required:
+        - file
+        - score
+      properties:
+        file:
+          $ref: '#/components/schemas/File'
+        score:
+          type: number
+          format: double
+        snippet:
+          type: string
+
+    SearchResponse:
+      type: object
+      required:
+        - data
+        - total
+        - query
+        - search_type
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/SearchResult'
+        total:
+          type: integer
+        query:
+          type: string
+        search_type:
+          type: string
+
+    # Upload
+    UploadResponse:
+      type: object
+      required:
+        - key
+        - filename
+        - size
+        - content_type
+      properties:
+        key:
+          type: string
+          description: S3 object key
+        download_url:
+          type: string
+          format: uri
+        filename:
+          type: string
+        size:
+          type: integer
+        content_type:
+          type: string
+
+    PresignedURLResponse:
+      type: object
+      required:
+        - upload_url
+        - key
+        - content_type
+      properties:
+        upload_url:
+          type: string
+          format: uri
+        key:
+          type: string
+        content_type:
+          type: string
+
+security:
+  - BearerAuth: []

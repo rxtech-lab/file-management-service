@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: files-management
+  labels:
+    name: files-management
+    app.kubernetes.io/name: files-management
+    app.kubernetes.io/managed-by: kustomize

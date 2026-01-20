@@ -1,0 +1,68 @@
+import { notFound } from "next/navigation";
+import { FilesPageClient } from "../files-page-client";
+import { listFilesAction } from "@/lib/actions/file-actions";
+import {
+  listFoldersAction,
+  getFolderAction,
+} from "@/lib/actions/folder-actions";
+import type { Folder } from "@/lib/api/types";
+
+interface FolderPageProps {
+  params: Promise<{ folderId: string }>;
+}
+
+// Helper function to build ancestor chain
+async function getAncestors(folder: Folder): Promise<Folder[]> {
+  const ancestors: Folder[] = [];
+  let currentParentId = folder.parent_id;
+
+  while (currentParentId) {
+    const result = await getFolderAction(currentParentId);
+    if (result.success && result.data) {
+      ancestors.unshift(result.data);
+      currentParentId = result.data.parent_id;
+    } else {
+      break;
+    }
+  }
+
+  return ancestors;
+}
+
+export default async function FolderPage({ params }: FolderPageProps) {
+  const { folderId } = await params;
+  const folderIdNum = parseInt(folderId, 10);
+
+  if (isNaN(folderIdNum)) {
+    notFound();
+  }
+
+  // Fetch all data in parallel where possible
+  const [folderResult, filesResult, subfoldersResult] = await Promise.all([
+    getFolderAction(folderIdNum),
+    listFilesAction({ folder_id: folderIdNum }),
+    listFoldersAction({ parent_id: folderIdNum }),
+  ]);
+
+  if (!folderResult.success || !folderResult.data) {
+    notFound();
+  }
+
+  const currentFolder = folderResult.data;
+  const files = filesResult.success ? (filesResult.data?.data ?? []) : [];
+  const folders = subfoldersResult.success
+    ? (subfoldersResult.data?.data ?? [])
+    : [];
+
+  // Get ancestors for breadcrumb
+  const ancestors = await getAncestors(currentFolder);
+
+  return (
+    <FilesPageClient
+      initialFiles={files}
+      initialFolders={folders}
+      currentFolder={currentFolder}
+      ancestors={ancestors}
+    />
+  );
+}
