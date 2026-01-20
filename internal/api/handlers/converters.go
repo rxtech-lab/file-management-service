@@ -179,9 +179,15 @@ func searchResultToGenerated(result *services.SearchResult) generated.SearchResu
 }
 
 func searchResultListToGenerated(results []services.SearchResult) []generated.SearchResult {
-	genResults := make([]generated.SearchResult, len(results))
-	for i, r := range results {
-		genResults[i] = searchResultToGenerated(&r)
+	// Deduplicate by file ID, keeping the first occurrence (highest score due to sorting)
+	seen := make(map[uint]bool)
+	genResults := make([]generated.SearchResult, 0, len(results))
+	for _, r := range results {
+		if seen[r.File.ID] {
+			continue
+		}
+		seen[r.File.ID] = true
+		genResults = append(genResults, searchResultToGenerated(&r))
 	}
 	return genResults
 }

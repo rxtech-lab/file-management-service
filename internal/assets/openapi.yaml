@@ -406,6 +406,12 @@ paths:
           description: Filter by folder ID
           schema:
             type: integer
+        - name: all_folders
+          in: query
+          description: When true, search across all folders (ignores folder_id). Useful for tag filtering.
+          schema:
+            type: boolean
+            default: false
         - name: file_type
           in: query
           description: Filter by file type
@@ -711,7 +717,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/OrganizeFileResponse'
+                $ref: '#/components/schemas/OrganizeFileResult'
         '404':
           $ref: '#/components/responses/NotFound'
         '401':
@@ -1394,7 +1400,7 @@ components:
           type: string
 
     # Agent
-    OrganizeFileResponse:
+    OrganizeFileResult:
       type: object
       required:
         - message

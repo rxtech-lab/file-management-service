@@ -23,7 +23,7 @@ export function TagBadge({ tag, onRemove, className }: TagBadgeProps) {
         color: backgroundColor,
       }}
     >
-      <span className="truncate max-w-[100px]">{tag.name}</span>
+      <span className="truncate">{tag.name}</span>
       {onRemove && (
         <button
           type="button"

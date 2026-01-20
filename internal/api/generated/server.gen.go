@@ -17,6 +17,9 @@ import (
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// Get AI agent status
+	// (GET /api/agent/status)
+	GetAgentStatus(c *fiber.Ctx) error
 	// List files
 	// (GET /api/files)
 	ListFiles(c *fiber.Ctx, params ListFilesParams) error
@@ -38,9 +41,15 @@ type ServerInterface interface {
 	// Update file
 	// (PUT /api/files/{id})
 	UpdateFile(c *fiber.Ctx, id FileId) error
+	// Stream AI agent progress
+	// (GET /api/files/{id}/agent-stream)
+	StreamAgentProgress(c *fiber.Ctx, id FileId) error
 	// Get file download URL
 	// (GET /api/files/{id}/download)
 	GetFileDownloadURL(c *fiber.Ctx, id FileId) error
+	// Trigger AI organization
+	// (POST /api/files/{id}/organize)
+	OrganizeFile(c *fiber.Ctx, id FileId) error
 	// Process file
 	// (POST /api/files/{id}/process)
 	ProcessFile(c *fiber.Ctx, id FileId) error
@@ -113,6 +122,14 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc fiber.Handler
 
+// GetAgentStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetAgentStatus(c *fiber.Ctx) error {
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.GetAgentStatus(c)
+}
+
 // ListFiles operation middleware
 func (siw *ServerInterfaceWrapper) ListFiles(c *fiber.Ctx) error {
 
@@ -141,6 +158,13 @@ func (siw *ServerInterfaceWrapper) ListFiles(c *fiber.Ctx) error {
 	err = runtime.BindQueryParameter("form", true, false, "folder_id", query, &params.FolderId)
 	if err != nil {
 		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter folder_id: %w", err).Error())
+	}
+
+	// ------------- Optional query parameter "all_folders" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "all_folders", query, &params.AllFolders)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter all_folders: %w", err).Error())
 	}
 
 	// ------------- Optional query parameter "file_type" -------------
@@ -273,6 +297,24 @@ func (siw *ServerInterfaceWrapper) UpdateFile(c *fiber.Ctx) error {
 	return siw.Handler.UpdateFile(c, id)
 }
 
+// StreamAgentProgress operation middleware
+func (siw *ServerInterfaceWrapper) StreamAgentProgress(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id FileId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.StreamAgentProgress(c, id)
+}
+
 // GetFileDownloadURL operation middleware
 func (siw *ServerInterfaceWrapper) GetFileDownloadURL(c *fiber.Ctx) error {
 
@@ -289,6 +331,24 @@ func (siw *ServerInterfaceWrapper) GetFileDownloadURL(c *fiber.Ctx) error {
 	c.Context().SetUserValue(BearerAuthScopes, []string{})
 
 	return siw.Handler.GetFileDownloadURL(c, id)
+}
+
+// OrganizeFile operation middleware
+func (siw *ServerInterfaceWrapper) OrganizeFile(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id FileId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.OrganizeFile(c, id)
 }
 
 // ProcessFile operation middleware
@@ -795,6 +855,8 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 		router.Use(fiber.Handler(m))
 	}
 
+	router.Get(options.BaseURL+"/api/agent/status", wrapper.GetAgentStatus)
+
 	router.Get(options.BaseURL+"/api/files", wrapper.ListFiles)
 
 	router.Post(options.BaseURL+"/api/files", wrapper.CreateFile)
@@ -809,7 +871,11 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 
 	router.Put(options.BaseURL+"/api/files/:id", wrapper.UpdateFile)
 
+	router.Get(options.BaseURL+"/api/files/:id/agent-stream", wrapper.StreamAgentProgress)
+
 	router.Get(options.BaseURL+"/api/files/:id/download", wrapper.GetFileDownloadURL)
+
+	router.Post(options.BaseURL+"/api/files/:id/organize", wrapper.OrganizeFile)
 
 	router.Post(options.BaseURL+"/api/files/:id/process", wrapper.ProcessFile)
 
@@ -860,6 +926,22 @@ type BadRequestJSONResponse Error
 type NotFoundJSONResponse Error
 
 type UnauthorizedJSONResponse Error
+
+type GetAgentStatusRequestObject struct {
+}
+
+type GetAgentStatusResponseObject interface {
+	VisitGetAgentStatusResponse(ctx *fiber.Ctx) error
+}
+
+type GetAgentStatus200JSONResponse AgentStatusResponse
+
+func (response GetAgentStatus200JSONResponse) VisitGetAgentStatusResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(200)
+
+	return ctx.JSON(&response)
+}
 
 type ListFilesRequestObject struct {
 	Params ListFilesParams
@@ -1110,6 +1192,60 @@ func (response UpdateFile401JSONResponse) VisitUpdateFileResponse(ctx *fiber.Ctx
 	return ctx.JSON(&response)
 }
 
+type StreamAgentProgressRequestObject struct {
+	Id FileId `json:"id"`
+}
+
+type StreamAgentProgressResponseObject interface {
+	VisitStreamAgentProgressResponse(ctx *fiber.Ctx) error
+}
+
+type StreamAgentProgress200TexteventStreamResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response StreamAgentProgress200TexteventStreamResponse) VisitStreamAgentProgressResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "text/event-stream")
+	if response.ContentLength != 0 {
+		ctx.Response().Header.Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	ctx.Status(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(ctx.Response().BodyWriter(), response.Body)
+	return err
+}
+
+type StreamAgentProgress401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response StreamAgentProgress401JSONResponse) VisitStreamAgentProgressResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(401)
+
+	return ctx.JSON(&response)
+}
+
+type StreamAgentProgress404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response StreamAgentProgress404JSONResponse) VisitStreamAgentProgressResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(404)
+
+	return ctx.JSON(&response)
+}
+
+type StreamAgentProgress503JSONResponse Error
+
+func (response StreamAgentProgress503JSONResponse) VisitStreamAgentProgressResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(503)
+
+	return ctx.JSON(&response)
+}
+
 type GetFileDownloadURLRequestObject struct {
 	Id FileId `json:"id"`
 }
@@ -1141,6 +1277,50 @@ type GetFileDownloadURL404JSONResponse struct{ NotFoundJSONResponse }
 func (response GetFileDownloadURL404JSONResponse) VisitGetFileDownloadURLResponse(ctx *fiber.Ctx) error {
 	ctx.Response().Header.Set("Content-Type", "application/json")
 	ctx.Status(404)
+
+	return ctx.JSON(&response)
+}
+
+type OrganizeFileRequestObject struct {
+	Id FileId `json:"id"`
+}
+
+type OrganizeFileResponseObject interface {
+	VisitOrganizeFileResponse(ctx *fiber.Ctx) error
+}
+
+type OrganizeFile200JSONResponse OrganizeFileResult
+
+func (response OrganizeFile200JSONResponse) VisitOrganizeFileResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(200)
+
+	return ctx.JSON(&response)
+}
+
+type OrganizeFile401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response OrganizeFile401JSONResponse) VisitOrganizeFileResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(401)
+
+	return ctx.JSON(&response)
+}
+
+type OrganizeFile404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response OrganizeFile404JSONResponse) VisitOrganizeFileResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(404)
+
+	return ctx.JSON(&response)
+}
+
+type OrganizeFile503JSONResponse Error
+
+func (response OrganizeFile503JSONResponse) VisitOrganizeFileResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(503)
 
 	return ctx.JSON(&response)
 }
@@ -1846,6 +2026,9 @@ func (response HealthCheck200JSONResponse) VisitHealthCheckResponse(ctx *fiber.C
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// Get AI agent status
+	// (GET /api/agent/status)
+	GetAgentStatus(ctx context.Context, request GetAgentStatusRequestObject) (GetAgentStatusResponseObject, error)
 	// List files
 	// (GET /api/files)
 	ListFiles(ctx context.Context, request ListFilesRequestObject) (ListFilesResponseObject, error)
@@ -1867,9 +2050,15 @@ type StrictServerInterface interface {
 	// Update file
 	// (PUT /api/files/{id})
 	UpdateFile(ctx context.Context, request UpdateFileRequestObject) (UpdateFileResponseObject, error)
+	// Stream AI agent progress
+	// (GET /api/files/{id}/agent-stream)
+	StreamAgentProgress(ctx context.Context, request StreamAgentProgressRequestObject) (StreamAgentProgressResponseObject, error)
 	// Get file download URL
 	// (GET /api/files/{id}/download)
 	GetFileDownloadURL(ctx context.Context, request GetFileDownloadURLRequestObject) (GetFileDownloadURLResponseObject, error)
+	// Trigger AI organization
+	// (POST /api/files/{id}/organize)
+	OrganizeFile(ctx context.Context, request OrganizeFileRequestObject) (OrganizeFileResponseObject, error)
 	// Process file
 	// (POST /api/files/{id}/process)
 	ProcessFile(ctx context.Context, request ProcessFileRequestObject) (ProcessFileResponseObject, error)
@@ -1946,6 +2135,31 @@ func NewStrictHandler(ssi StrictServerInterface, middlewares []StrictMiddlewareF
 type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
+}
+
+// GetAgentStatus operation middleware
+func (sh *strictHandler) GetAgentStatus(ctx *fiber.Ctx) error {
+	var request GetAgentStatusRequestObject
+
+	handler := func(ctx *fiber.Ctx, request interface{}) (interface{}, error) {
+		return sh.ssi.GetAgentStatus(ctx.UserContext(), request.(GetAgentStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetAgentStatus")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	} else if validResponse, ok := response.(GetAgentStatusResponseObject); ok {
+		if err := validResponse.VisitGetAgentStatusResponse(ctx); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
 }
 
 // ListFiles operation middleware
@@ -2155,6 +2369,33 @@ func (sh *strictHandler) UpdateFile(ctx *fiber.Ctx, id FileId) error {
 	return nil
 }
 
+// StreamAgentProgress operation middleware
+func (sh *strictHandler) StreamAgentProgress(ctx *fiber.Ctx, id FileId) error {
+	var request StreamAgentProgressRequestObject
+
+	request.Id = id
+
+	handler := func(ctx *fiber.Ctx, request interface{}) (interface{}, error) {
+		return sh.ssi.StreamAgentProgress(ctx.UserContext(), request.(StreamAgentProgressRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StreamAgentProgress")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	} else if validResponse, ok := response.(StreamAgentProgressResponseObject); ok {
+		if err := validResponse.VisitStreamAgentProgressResponse(ctx); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
 // GetFileDownloadURL operation middleware
 func (sh *strictHandler) GetFileDownloadURL(ctx *fiber.Ctx, id FileId) error {
 	var request GetFileDownloadURLRequestObject
@@ -2174,6 +2415,33 @@ func (sh *strictHandler) GetFileDownloadURL(ctx *fiber.Ctx, id FileId) error {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	} else if validResponse, ok := response.(GetFileDownloadURLResponseObject); ok {
 		if err := validResponse.VisitGetFileDownloadURLResponse(ctx); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// OrganizeFile operation middleware
+func (sh *strictHandler) OrganizeFile(ctx *fiber.Ctx, id FileId) error {
+	var request OrganizeFileRequestObject
+
+	request.Id = id
+
+	handler := func(ctx *fiber.Ctx, request interface{}) (interface{}, error) {
+		return sh.ssi.OrganizeFile(ctx.UserContext(), request.(OrganizeFileRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "OrganizeFile")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	} else if validResponse, ok := response.(OrganizeFileResponseObject); ok {
+		if err := validResponse.VisitOrganizeFileResponse(ctx); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, err.Error())
 		}
 	} else if response != nil {

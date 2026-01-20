@@ -192,13 +192,10 @@ export function FileCard({
                   {/* File name */}
                   <div className="w-full text-center">
                     <p
-                      className="font-medium text-sm truncate"
+                      className="font-medium text-sm line-clamp-2"
                       title={file.title}
                     >
                       {file.title}
-                    </p>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {file.original_filename}
                     </p>
                   </div>
 
@@ -239,6 +236,10 @@ export function FileCard({
             <div className="space-y-2">
               {file.tags && file.tags.length > 0 && (
                 <div className="space-y-1">
+                  <p className="font-medium text-xs">Original filename</p>
+                  <p className="text-xs text-muted-foreground">
+                    {file.original_filename}
+                  </p>
                   <p className="font-medium text-xs">Tags</p>
                   <div className="flex flex-wrap gap-1">
                     {file.tags.map((tag) => (

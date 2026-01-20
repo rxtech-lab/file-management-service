@@ -55,6 +55,7 @@ export function FolderTree({
             <SidebarMenuButton
               isActive={isRootActive}
               onClick={() => router.push("/files")}
+              tooltip="All Files"
             >
               <FolderOpen className="h-4 w-4 shrink-0 text-blue-500" />
               <span>All Files</span>

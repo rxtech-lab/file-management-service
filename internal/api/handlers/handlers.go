@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/rxtech-lab/invoice-management/internal/api/generated"
 	"github.com/rxtech-lab/invoice-management/internal/services"
@@ -99,4 +100,57 @@ func badRequest(msg string) generated.BadRequestJSONResponse {
 
 func notFound(msg string) generated.NotFoundJSONResponse {
 	return generated.NotFoundJSONResponse{Error: msg}
+}
+
+// GetAgentStatus returns the status of the AI agent service
+func (h *StrictHandlers) GetAgentStatus(
+	ctx context.Context,
+	request generated.GetAgentStatusRequestObject,
+) (generated.GetAgentStatusResponseObject, error) {
+	enabled := h.agentService != nil && h.agentService.IsEnabled()
+	return generated.GetAgentStatus200JSONResponse{
+		Enabled: enabled,
+	}, nil
+}
+
+// OrganizeFile triggers the AI agent to organize a file
+func (h *StrictHandlers) OrganizeFile(
+	ctx context.Context,
+	request generated.OrganizeFileRequestObject,
+) (generated.OrganizeFileResponseObject, error) {
+	userID, err := getUserID(ctx)
+	if err != nil {
+		return generated.OrganizeFile401JSONResponse{UnauthorizedJSONResponse: unauthorized()}, nil
+	}
+
+	fileID := uint(request.Id)
+
+	// Check if agent is enabled
+	if h.agentService == nil || !h.agentService.IsEnabled() {
+		return generated.OrganizeFile503JSONResponse{Error: "AI agent is not enabled"}, nil
+	}
+
+	// Verify file ownership
+	file, err := h.fileService.GetFileByID(userID, fileID)
+	if err != nil || file == nil {
+		return generated.OrganizeFile404JSONResponse{NotFoundJSONResponse: notFound("File not found")}, nil
+	}
+
+	// Return the stream URL for the client to subscribe to
+	return generated.OrganizeFile200JSONResponse{
+		Message:   "Agent organization started",
+		FileId:    int(fileID),
+		StreamUrl: fmt.Sprintf("/api/files/%d/agent-stream", fileID),
+	}, nil
+}
+
+// StreamAgentProgress streams AI agent progress events (SSE endpoint - needs special handling)
+func (h *StrictHandlers) StreamAgentProgress(
+	ctx context.Context,
+	request generated.StreamAgentProgressRequestObject,
+) (generated.StreamAgentProgressResponseObject, error) {
+	// This is an SSE endpoint that requires special Fiber handling
+	// The actual implementation is in AgentHandlers.StreamAgentProgress
+	// Return 503 as this strict handler cannot handle SSE
+	return nil, errors.New("SSE endpoints should use direct Fiber handlers")
 }

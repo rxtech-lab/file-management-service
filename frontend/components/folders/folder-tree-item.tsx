@@ -55,6 +55,7 @@ export function FolderTreeItem({
               onClick={handleClick}
               onContextMenu={handleContextMenu}
               className="w-full justify-start"
+              tooltip={folder.name}
             >
               <ChevronRight
                 className={cn(
@@ -93,6 +94,7 @@ export function FolderTreeItem({
         isActive={isActive}
         onClick={handleClick}
         onContextMenu={handleContextMenu}
+        tooltip={folder.name}
       >
         <span className="w-4 group-data-[collapsible=icon]:hidden" /> {/* Spacer for alignment */}
         <FolderIcon className="h-4 w-4 shrink-0 text-yellow-500" />

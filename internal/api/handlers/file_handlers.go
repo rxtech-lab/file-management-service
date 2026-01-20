@@ -38,6 +38,11 @@ func (h *StrictHandlers) ListFiles(
 		opts.FolderID = &folderID
 	}
 
+	// Handle all_folders
+	if request.Params.AllFolders != nil && *request.Params.AllFolders {
+		opts.AllFolders = true
+	}
+
 	// Handle file_type
 	if request.Params.FileType != nil {
 		ft := models.FileType(*request.Params.FileType)

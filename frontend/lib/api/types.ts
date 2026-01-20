@@ -170,6 +170,7 @@ export interface PaginatedResponse<T> {
 // List Options
 export interface FileListOptions {
   folder_id?: number | null;
+  all_folders?: boolean;
   file_type?: FileType;
   keyword?: string;
   tag_ids?: number[];

@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutGrid, List } from "lucide-react";
+import { LayoutGrid, List, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { SiteHeader } from "@/components/layout/site-header";
@@ -29,6 +29,7 @@ interface FilesPageClientProps {
   currentFolder: Folder | null;
   ancestors?: Folder[];
   highlightFileId?: number;
+  activeTagIds?: number[];
 }
 
 export function FilesPageClient({
@@ -37,6 +38,7 @@ export function FilesPageClient({
   currentFolder,
   ancestors = [],
   highlightFileId,
+  activeTagIds,
 }: FilesPageClientProps) {
   const router = useRouter();
   const { viewMode, setViewMode, isGrid } = useViewMode();
@@ -60,6 +62,7 @@ export function FilesPageClient({
     refetchInterval: 10000, // 10 seconds
     refetchOnWindowFocus: true,
   });
+  
 
   // Create folder dialog
   const [showCreateFolder, setShowCreateFolder] = useState(false);
@@ -189,7 +192,28 @@ export function FilesPageClient({
       >
         {/* Toolbar */}
         <div className="flex items-center justify-between px-4 py-2 border-b">
-          <FolderBreadcrumb folder={currentFolder} ancestors={ancestors} />
+          <div className="flex items-center gap-4">
+            <FolderBreadcrumb folder={currentFolder} ancestors={ancestors} />
+            {activeTagIds && activeTagIds.length > 0 && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">
+                  Filtered by tag
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    router.push(
+                      currentFolder ? `/files/${currentFolder.id}` : "/files"
+                    )
+                  }
+                >
+                  Clear
+                  <X className="h-4 w-4 ml-1" />
+                </Button>
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <Button
               variant={isGrid ? "secondary" : "ghost"}

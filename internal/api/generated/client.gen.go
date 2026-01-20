@@ -89,6 +89,9 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 
 // The interface specification for the client above.
 type ClientInterface interface {
+	// GetAgentStatus request
+	GetAgentStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListFiles request
 	ListFiles(ctx context.Context, params *ListFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -118,8 +121,14 @@ type ClientInterface interface {
 
 	UpdateFile(ctx context.Context, id FileId, body UpdateFileJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// StreamAgentProgress request
+	StreamAgentProgress(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetFileDownloadURL request
 	GetFileDownloadURL(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// OrganizeFile request
+	OrganizeFile(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ProcessFile request
 	ProcessFile(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -201,6 +210,18 @@ type ClientInterface interface {
 
 	// HealthCheck request
 	HealthCheck(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+}
+
+func (c *Client) GetAgentStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetAgentStatusRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
 }
 
 func (c *Client) ListFiles(ctx context.Context, params *ListFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -335,8 +356,32 @@ func (c *Client) UpdateFile(ctx context.Context, id FileId, body UpdateFileJSONR
 	return c.Client.Do(req)
 }
 
+func (c *Client) StreamAgentProgress(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStreamAgentProgressRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) GetFileDownloadURL(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetFileDownloadURLRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) OrganizeFile(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOrganizeFileRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -707,6 +752,33 @@ func (c *Client) HealthCheck(ctx context.Context, reqEditors ...RequestEditorFn)
 	return c.Client.Do(req)
 }
 
+// NewGetAgentStatusRequest generates requests for GetAgentStatus
+func NewGetAgentStatusRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/agent/status")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListFilesRequest generates requests for ListFiles
 func NewListFilesRequest(server string, params *ListFilesParams) (*http.Request, error) {
 	var err error
@@ -748,6 +820,22 @@ func NewListFilesRequest(server string, params *ListFilesParams) (*http.Request,
 		if params.FolderId != nil {
 
 			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "folder_id", runtime.ParamLocationQuery, *params.FolderId); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.AllFolders != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "all_folders", runtime.ParamLocationQuery, *params.AllFolders); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
@@ -1119,6 +1207,40 @@ func NewUpdateFileRequestWithBody(server string, id FileId, contentType string, 
 	return req, nil
 }
 
+// NewStreamAgentProgressRequest generates requests for StreamAgentProgress
+func NewStreamAgentProgressRequest(server string, id FileId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/files/%s/agent-stream", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetFileDownloadURLRequest generates requests for GetFileDownloadURL
 func NewGetFileDownloadURLRequest(server string, id FileId) (*http.Request, error) {
 	var err error
@@ -1146,6 +1268,40 @@ func NewGetFileDownloadURLRequest(server string, id FileId) (*http.Request, erro
 	}
 
 	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewOrganizeFileRequest generates requests for OrganizeFile
+func NewOrganizeFileRequest(server string, id FileId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/files/%s/organize", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2276,6 +2432,9 @@ func WithBaseURL(baseURL string) ClientOption {
 
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
+	// GetAgentStatusWithResponse request
+	GetAgentStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetAgentStatusResponse, error)
+
 	// ListFilesWithResponse request
 	ListFilesWithResponse(ctx context.Context, params *ListFilesParams, reqEditors ...RequestEditorFn) (*ListFilesResponse, error)
 
@@ -2305,8 +2464,14 @@ type ClientWithResponsesInterface interface {
 
 	UpdateFileWithResponse(ctx context.Context, id FileId, body UpdateFileJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFileResponse, error)
 
+	// StreamAgentProgressWithResponse request
+	StreamAgentProgressWithResponse(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*StreamAgentProgressResponse, error)
+
 	// GetFileDownloadURLWithResponse request
 	GetFileDownloadURLWithResponse(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*GetFileDownloadURLResponse, error)
+
+	// OrganizeFileWithResponse request
+	OrganizeFileWithResponse(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*OrganizeFileResponse, error)
 
 	// ProcessFileWithResponse request
 	ProcessFileWithResponse(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*ProcessFileResponse, error)
@@ -2388,6 +2553,28 @@ type ClientWithResponsesInterface interface {
 
 	// HealthCheckWithResponse request
 	HealthCheckWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthCheckResponse, error)
+}
+
+type GetAgentStatusResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *AgentStatusResponse
+}
+
+// Status returns HTTPResponse.Status
+func (r GetAgentStatusResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetAgentStatusResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
 }
 
 type ListFilesResponse struct {
@@ -2558,6 +2745,30 @@ func (r UpdateFileResponse) StatusCode() int {
 	return 0
 }
 
+type StreamAgentProgressResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON401      *Unauthorized
+	JSON404      *NotFound
+	JSON503      *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r StreamAgentProgressResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StreamAgentProgressResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type GetFileDownloadURLResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -2576,6 +2787,31 @@ func (r GetFileDownloadURLResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r GetFileDownloadURLResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type OrganizeFileResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *OrganizeFileResult
+	JSON401      *Unauthorized
+	JSON404      *NotFound
+	JSON503      *Error
+}
+
+// Status returns HTTPResponse.Status
+func (r OrganizeFileResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r OrganizeFileResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -3084,6 +3320,15 @@ func (r HealthCheckResponse) StatusCode() int {
 	return 0
 }
 
+// GetAgentStatusWithResponse request returning *GetAgentStatusResponse
+func (c *ClientWithResponses) GetAgentStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetAgentStatusResponse, error) {
+	rsp, err := c.GetAgentStatus(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetAgentStatusResponse(rsp)
+}
+
 // ListFilesWithResponse request returning *ListFilesResponse
 func (c *ClientWithResponses) ListFilesWithResponse(ctx context.Context, params *ListFilesParams, reqEditors ...RequestEditorFn) (*ListFilesResponse, error) {
 	rsp, err := c.ListFiles(ctx, params, reqEditors...)
@@ -3179,6 +3424,15 @@ func (c *ClientWithResponses) UpdateFileWithResponse(ctx context.Context, id Fil
 	return ParseUpdateFileResponse(rsp)
 }
 
+// StreamAgentProgressWithResponse request returning *StreamAgentProgressResponse
+func (c *ClientWithResponses) StreamAgentProgressWithResponse(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*StreamAgentProgressResponse, error) {
+	rsp, err := c.StreamAgentProgress(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStreamAgentProgressResponse(rsp)
+}
+
 // GetFileDownloadURLWithResponse request returning *GetFileDownloadURLResponse
 func (c *ClientWithResponses) GetFileDownloadURLWithResponse(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*GetFileDownloadURLResponse, error) {
 	rsp, err := c.GetFileDownloadURL(ctx, id, reqEditors...)
@@ -3186,6 +3440,15 @@ func (c *ClientWithResponses) GetFileDownloadURLWithResponse(ctx context.Context
 		return nil, err
 	}
 	return ParseGetFileDownloadURLResponse(rsp)
+}
+
+// OrganizeFileWithResponse request returning *OrganizeFileResponse
+func (c *ClientWithResponses) OrganizeFileWithResponse(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*OrganizeFileResponse, error) {
+	rsp, err := c.OrganizeFile(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOrganizeFileResponse(rsp)
 }
 
 // ProcessFileWithResponse request returning *ProcessFileResponse
@@ -3447,6 +3710,32 @@ func (c *ClientWithResponses) HealthCheckWithResponse(ctx context.Context, reqEd
 		return nil, err
 	}
 	return ParseHealthCheckResponse(rsp)
+}
+
+// ParseGetAgentStatusResponse parses an HTTP response from a GetAgentStatusWithResponse call
+func ParseGetAgentStatusResponse(rsp *http.Response) (*GetAgentStatusResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetAgentStatusResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AgentStatusResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	}
+
+	return response, nil
 }
 
 // ParseListFilesResponse parses an HTTP response from a ListFilesWithResponse call
@@ -3711,6 +4000,46 @@ func ParseUpdateFileResponse(rsp *http.Response) (*UpdateFileResponse, error) {
 	return response, nil
 }
 
+// ParseStreamAgentProgressResponse parses an HTTP response from a StreamAgentProgressWithResponse call
+func ParseStreamAgentProgressResponse(rsp *http.Response) (*StreamAgentProgressResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StreamAgentProgressResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseGetFileDownloadURLResponse parses an HTTP response from a GetFileDownloadURLWithResponse call
 func ParseGetFileDownloadURLResponse(rsp *http.Response) (*GetFileDownloadURLResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -3745,6 +4074,53 @@ func ParseGetFileDownloadURLResponse(rsp *http.Response) (*GetFileDownloadURLRes
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseOrganizeFileResponse parses an HTTP response from a OrganizeFileWithResponse call
+func ParseOrganizeFileResponse(rsp *http.Response) (*OrganizeFileResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &OrganizeFileResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest OrganizeFileResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 

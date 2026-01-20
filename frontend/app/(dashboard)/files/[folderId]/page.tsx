@@ -9,7 +9,7 @@ import type { Folder } from "@/lib/api/types";
 
 interface FolderPageProps {
   params: Promise<{ folderId: string }>;
-  searchParams: Promise<{ highlight?: string }>;
+  searchParams: Promise<{ highlight?: string; tag_ids?: string }>;
 }
 
 // Helper function to build ancestor chain
@@ -32,9 +32,17 @@ async function getAncestors(folder: Folder): Promise<Folder[]> {
 
 export default async function FolderPage({ params, searchParams }: FolderPageProps) {
   const { folderId } = await params;
-  const { highlight } = await searchParams;
+  const { highlight, tag_ids } = await searchParams;
   const folderIdNum = parseInt(folderId, 10);
   const highlightId = highlight ? parseInt(highlight, 10) : undefined;
+
+  // Parse tag_ids from comma-separated string
+  const tagIds = tag_ids
+    ? tag_ids
+        .split(",")
+        .map((id) => parseInt(id, 10))
+        .filter((id) => !isNaN(id))
+    : undefined;
 
   if (isNaN(folderIdNum)) {
     notFound();
@@ -43,7 +51,7 @@ export default async function FolderPage({ params, searchParams }: FolderPagePro
   // Fetch all data in parallel where possible
   const [folderResult, filesResult, subfoldersResult] = await Promise.all([
     getFolderAction(folderIdNum),
-    listFilesAction({ folder_id: folderIdNum }),
+    listFilesAction({ folder_id: folderIdNum, tag_ids: tagIds }),
     listFoldersAction({ parent_id: folderIdNum }),
   ]);
 
@@ -67,6 +75,7 @@ export default async function FolderPage({ params, searchParams }: FolderPagePro
       currentFolder={currentFolder}
       ancestors={ancestors}
       highlightFileId={highlightId}
+      activeTagIds={tagIds}
     />
   );
 }

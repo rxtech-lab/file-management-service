@@ -19,6 +19,9 @@ export async function listFiles(
   if (options.folder_id != null) {
     params.set("folder_id", options.folder_id.toString());
   }
+  if (options.all_folders) {
+    params.set("all_folders", "true");
+  }
   if (options.file_type) params.set("file_type", options.file_type);
   if (options.keyword) params.set("keyword", options.keyword);
   if (options.tag_ids?.length) {

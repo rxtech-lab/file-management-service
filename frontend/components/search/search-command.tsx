@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useSessionStorage } from "@uidotdev/usehooks";
 import { motion, AnimatePresence } from "framer-motion";
-import { Loader2, Sparkles } from "lucide-react";
+import { Loader2, Sparkles, MessageSquare } from "lucide-react";
+import type { UIMessage } from "ai";
 import {
   CommandDialog,
   CommandEmpty,
@@ -39,6 +41,10 @@ export function SearchCommand({ open, onOpenChange }: SearchCommandProps) {
   const [agentQuery, setAgentQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Persist chat history in sessionStorage
+  const [chatHistory, setChatHistory] = useSessionStorage<UIMessage[]>("search-chat-history", []);
+  const hasChatHistory = chatHistory.length > 0;
+
   // Debounced search
   const performSearch = useCallback(
     async (searchQuery: string) => {
@@ -56,6 +62,7 @@ export function SearchCommand({ open, onOpenChange }: SearchCommandProps) {
         });
 
         if (response.success && response.data) {
+          console.log("Setting results:", response.data.data);
           setResults(response.data.data);
         } else {
           setResults([]);
@@ -81,13 +88,14 @@ export function SearchCommand({ open, onOpenChange }: SearchCommandProps) {
     return () => clearTimeout(timeoutId);
   }, [query, performSearch, mode]);
 
-  // Reset when dialog closes
+  // Reset when dialog closes (but preserve chat history)
   useEffect(() => {
     if (!open) {
       setQuery("");
       setResults([]);
       setMode("quick");
       setAgentQuery("");
+      // Note: DO NOT clear chatHistory here - we want to preserve it
     }
   }, [open]);
 
@@ -103,10 +111,29 @@ export function SearchCommand({ open, onOpenChange }: SearchCommandProps) {
 
   const handleEnterPress = () => {
     if (query.trim() && mode === "quick") {
+      setChatHistory([]);  // Clear history for new search
       setAgentQuery(query);
       setMode("agent");
     }
   };
+
+  const handleResumeChat = () => {
+    setAgentQuery("");  // No new query, just resume
+    setMode("agent");
+  };
+
+  const handleClearChatHistory = () => {
+    setChatHistory([]);
+    setMode("quick");
+    // Re-focus input after animation
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 100);
+  };
+
+  const handleMessagesChange = useCallback((messages: UIMessage[]) => {
+    setChatHistory(messages);
+  }, [setChatHistory]);
 
   const handleBackToQuick = () => {
     setMode("quick");
@@ -122,15 +149,18 @@ export function SearchCommand({ open, onOpenChange }: SearchCommandProps) {
   };
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <AnimatePresence mode="wait">
+    <CommandDialog open={open} onOpenChange={onOpenChange} className="max-w-2xl! overflow-hidden" shouldFilter={false}>
+      <AnimatePresence mode="wait" initial={false}>
         {mode === "quick" ? (
           <motion.div
             key="quick-search"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            transition={{ duration: 0.2 }}
+            initial={{ opacity: 0, x: -30, scale: 0.98 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: -30, scale: 0.98 }}
+            transition={{
+              duration: 0.25,
+              ease: [0.4, 0, 0.2, 1]
+            }}
             className="flex flex-col"
           >
             <CommandInput
@@ -153,7 +183,7 @@ export function SearchCommand({ open, onOpenChange }: SearchCommandProps) {
               ) : (
                 <>
                   <CommandEmpty>
-                    {query ? (
+                    {query && results.length === 0 ? (
                       <div className="space-y-2 py-4">
                         <p>No files found.</p>
                         <button
@@ -179,6 +209,7 @@ export function SearchCommand({ open, onOpenChange }: SearchCommandProps) {
                       {results.map((result) => (
                         <CommandItem
                           key={result.file.id}
+                          value={String(result.file.id)}
                           onSelect={() => handleSelect(result)}
                           className="cursor-pointer"
                         >
@@ -246,6 +277,15 @@ export function SearchCommand({ open, onOpenChange }: SearchCommandProps) {
                 ))}
               </div>
               <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                {hasChatHistory && (
+                  <button
+                    onClick={handleResumeChat}
+                    className="flex items-center gap-1 text-primary hover:underline font-medium"
+                  >
+                    <MessageSquare className="h-3 w-3" />
+                    Resume Chat
+                  </button>
+                )}
                 <span className="flex items-center gap-1">
                   <Sparkles className="h-3 w-3" />
                   <kbd className="px-1.5 py-0.5 bg-muted rounded text-[10px]">Enter</kbd>
@@ -258,14 +298,20 @@ export function SearchCommand({ open, onOpenChange }: SearchCommandProps) {
         ) : (
           <motion.div
             key="agent-search"
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
-            transition={{ duration: 0.2 }}
-            className="h-[400px]"
+            initial={{ opacity: 0, x: 30, scale: 0.98 }}
+            animate={{ opacity: 1, x: 0, scale: 1 }}
+            exit={{ opacity: 0, x: 30, scale: 0.98 }}
+            transition={{
+              duration: 0.25,
+              ease: [0.4, 0, 0.2, 1]
+            }}
+            className="h-[700px]"
           >
             <SearchAgent
               initialQuery={agentQuery}
+              initialMessages={chatHistory}
+              onMessagesChange={handleMessagesChange}
+              onClearHistory={handleClearChatHistory}
               onBack={handleBackToQuick}
               onClose={handleClose}
             />

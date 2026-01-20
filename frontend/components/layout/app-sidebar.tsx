@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { FolderOpen, Tags } from "lucide-react";
 import {
@@ -20,21 +20,25 @@ import {
 import { NavUser } from "./nav-user";
 import { FolderTree } from "@/components/folders/folder-tree";
 import { CreateFolderDialog } from "@/components/folders/create-folder-dialog";
-import type { FolderTree as FolderTreeType } from "@/lib/api/types";
+import type { FolderTree as FolderTreeType, Tag } from "@/lib/api/types";
 
 interface AppSidebarProps {
   variant?: "sidebar" | "floating" | "inset";
   folderTree?: FolderTreeType[];
+  tags?: Tag[];
 }
 
 export function AppSidebar({
   variant = "inset",
   folderTree = [],
+  tags = [],
 }: AppSidebarProps) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [showCreateFolder, setShowCreateFolder] = useState(false);
 
   const isTagsActive = pathname.startsWith("/tags");
+  const activeTagId = searchParams.get("tag_ids");
 
   return (
     <>
@@ -68,7 +72,43 @@ export function AppSidebar({
 
           <SidebarSeparator />
 
-          {/* Tags section */}
+          {/* Tags filter section */}
+          <SidebarGroup>
+            <SidebarGroupLabel>Tags</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {tags.length > 0 ? (
+                  tags.map((tag) => (
+                    <SidebarMenuItem key={tag.id}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={activeTagId === tag.id.toString()}
+                        tooltip={tag.name}
+                      >
+                        <Link href={`/files?tag_ids=${tag.id}`}>
+                          <span
+                            className="h-3 w-3 rounded-full shrink-0"
+                            style={{ backgroundColor: tag.color || "#6b7280" }}
+                          />
+                          <span className="truncate">{tag.name}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))
+                ) : (
+                  <SidebarMenuItem>
+                    <div className="px-3 py-2 text-sm text-muted-foreground">
+                      No tags yet
+                    </div>
+                  </SidebarMenuItem>
+                )}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+
+          <SidebarSeparator />
+
+          {/* Manage section */}
           <SidebarGroup>
             <SidebarGroupLabel>Manage</SidebarGroupLabel>
             <SidebarGroupContent>
@@ -77,11 +117,11 @@ export function AppSidebar({
                   <SidebarMenuButton
                     asChild
                     isActive={isTagsActive}
-                    tooltip="Tags"
+                    tooltip="Manage Tags"
                   >
                     <Link href="/tags">
                       <Tags className="size-4" />
-                      <span>Tags</span>
+                      <span>Manage Tags</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

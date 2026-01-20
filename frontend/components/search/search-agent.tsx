@@ -1,69 +1,116 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { readStreamableValue } from "@ai-sdk/rsc";
+import { Chat, useChat } from "@ai-sdk/react";
+import { DefaultChatTransport, UIMessage as AIUIMessage } from "ai";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ArrowLeft,
   ArrowRight,
-  Check,
+  ArrowUp,
   Loader2,
   Sparkles,
+  Square,
   User,
   Bot,
-  AlertCircle,
+  Trash2,
 } from "lucide-react";
+import Markdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   FileTypeIcon,
   getFileTypeColor,
 } from "@/components/files/file-type-icon";
-import { searchWithAgentAction } from "@/lib/actions/search-agent-actions";
-import type {
-  AgentSearchMessage,
-  AgentSearchToolCall,
-  AgentSearchProgress,
-  FileItem,
-} from "@/lib/api/types";
+import type { FileType } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
+
+// Type for the display_files tool output
+interface DisplayFilesOutput {
+  files: Array<{
+    id: number;
+    title: string;
+    description?: string;
+    file_type: string;
+    mime_type?: string;
+    folder_id?: number | null;
+    folder_name?: string;
+  }>;
+  summary?: string;
+}
+
+// Type for tool parts with output
+interface ToolPartWithOutput {
+  type: string;
+  toolCallId?: string;
+  state?: string;
+  output?: unknown;
+}
 
 interface SearchAgentProps {
   initialQuery: string;
+  initialMessages?: AIUIMessage[];
+  onMessagesChange?: (messages: AIUIMessage[]) => void;
+  onClearHistory?: () => void;
   onBack: () => void;
   onClose: () => void;
 }
 
 export function SearchAgent({
   initialQuery,
+  initialMessages,
+  onMessagesChange,
+  onClearHistory,
   onBack,
   onClose,
 }: SearchAgentProps) {
   const router = useRouter();
-  const [messages, setMessages] = useState<AgentSearchMessage[]>([]);
-  const [inputValue, setInputValue] = useState("");
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [currentProgress, setCurrentProgress] =
-    useState<AgentSearchProgress | null>(null);
-  const [currentText, setCurrentText] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const initialQuerySent = useRef(false);
+  const [input, setInput] = useState("");
 
-  // Process initial query on mount
-  useEffect(() => {
-    if (initialQuery && messages.length === 0) {
-      handleSubmit(initialQuery);
-    }
+  // Create a stable Chat instance using useMemo, with initial messages if provided
+  const chat = useMemo(
+    () =>
+      new Chat({
+        transport: new DefaultChatTransport({ api: "/api/search-agent" }),
+        messages: initialMessages,
+      }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialQuery]);
+    [] // Only create once on mount
+  );
+
+  const { messages, sendMessage, status, stop } = useChat({ chat });
+
+  const isProcessing = status === "streaming" || status === "submitted";
+
+  const handleCancel = () => {
+    stop();
+  };
+
+  // Sync messages to parent for persistence
+  useEffect(() => {
+    if (onMessagesChange && messages.length > 0) {
+      onMessagesChange(messages);
+    }
+  }, [messages, onMessagesChange]);
+
+  // Send initial query on mount (only if no initial messages and query provided)
+  useEffect(() => {
+    if (initialQuery && !initialQuerySent.current && status === "ready" && (!initialMessages || initialMessages.length === 0)) {
+      initialQuerySent.current = true;
+      sendMessage({ text: initialQuery });
+    }
+  }, [initialQuery, sendMessage, status, initialMessages]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, currentProgress, currentText]);
+  }, [messages]);
 
   // Focus input after processing
   useEffect(() => {
@@ -72,77 +119,7 @@ export function SearchAgent({
     }
   }, [isProcessing]);
 
-  const handleSubmit = async (query: string) => {
-    if (!query.trim() || isProcessing) return;
-
-    const userMessage: AgentSearchMessage = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content: query,
-      createdAt: new Date(),
-    };
-
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
-    setInputValue("");
-    setIsProcessing(true);
-    setCurrentText("");
-
-    try {
-      const { progress, textStream } =
-        await searchWithAgentAction(newMessages);
-
-      // Read progress stream
-      if (progress) {
-        (async () => {
-          for await (const progressUpdate of readStreamableValue(progress)) {
-            if (progressUpdate) {
-              setCurrentProgress(progressUpdate);
-            }
-          }
-        })();
-      }
-
-      // Read text stream
-      let fullText = "";
-      if (textStream) {
-        for await (const textPart of readStreamableValue(textStream)) {
-          if (textPart) {
-            fullText += textPart;
-            setCurrentText(fullText);
-          }
-        }
-      }
-
-      // Add assistant response
-      const assistantMessage: AgentSearchMessage = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: fullText || "I couldn't find any results for your search.",
-        createdAt: new Date(),
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
-    } catch (error) {
-      console.error("Search error:", error);
-      const errorMessage: AgentSearchMessage = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content:
-          error instanceof Error
-            ? error.message
-            : "An error occurred while searching.",
-        createdAt: new Date(),
-      };
-      setMessages((prev) => [...prev, errorMessage]);
-    } finally {
-      setCurrentProgress(null);
-      setCurrentText("");
-      setIsProcessing(false);
-    }
-  };
-
-  const handleFileClick = (file: FileItem) => {
+  const handleFileClick = (file: { id: number; folder_id?: number | null }) => {
     const folderId = file.folder_id;
     if (folderId) {
       router.push(`/files/${folderId}?highlight=${file.id}`);
@@ -155,7 +132,17 @@ export function SearchAgent({
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit(inputValue);
+      if (input.trim() && !isProcessing) {
+        sendMessage({ text: input });
+        setInput("");
+      }
+    }
+  };
+
+  const handleSubmit = () => {
+    if (input.trim() && !isProcessing) {
+      sendMessage({ text: input });
+      setInput("");
     }
   };
 
@@ -178,47 +165,74 @@ export function SearchAgent({
           <ArrowLeft className="h-4 w-4 mr-1" />
           Back
         </Button>
-        <div className="flex items-center gap-2 text-sm font-medium">
+        <div className="flex items-center gap-2 text-sm font-medium flex-1">
           <Sparkles className="h-4 w-4 text-primary" />
           AI Search
         </div>
+        {onClearHistory && messages.length > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onClearHistory}
+            className="h-8 px-2 text-muted-foreground hover:text-destructive"
+          >
+            <Trash2 className="h-4 w-4 mr-1" />
+            Clear
+          </Button>
+        )}
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 px-3" ref={scrollRef}>
+      <ScrollArea className="flex-1 min-h-0 px-3" viewportRef={scrollRef}>
         <div className="py-4 space-y-4">
           <AnimatePresence mode="popLayout">
-            {messages.map((message) => (
-              <motion.div
-                key={message.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.3 }}
-              >
-                <MessageBubble
-                  message={message}
-                  onFileClick={handleFileClick}
-                />
-              </motion.div>
-            ))}
+            {messages.map((message) => {
+              // Check if message has any content to display
+              const hasTextContent = message.parts.some(
+                (part) => part.type === "text" && (part as { type: "text"; text: string }).text.trim()
+              );
+              const hasToolCalls = message.parts.some((part) =>
+                part.type.startsWith("tool-")
+              );
+
+              // Skip empty assistant messages
+              if (message.role === "assistant" && !hasTextContent && !hasToolCalls) {
+                return null;
+              }
+
+              return (
+                <motion.div
+                  key={message.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.3 }}
+                >
+                  <MessageBubble
+                    message={message}
+                    onFileClick={handleFileClick}
+                  />
+                </motion.div>
+              );
+            })}
           </AnimatePresence>
 
-          {/* Current progress/streaming text */}
+          {/* Loading indicator - only show when no assistant content yet */}
           <AnimatePresence>
-            {isProcessing && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -20 }}
-                transition={{ duration: 0.2 }}
-              >
-                <StreamingResponse
-                  progress={currentProgress}
-                  text={currentText}
-                />
-              </motion.div>
-            )}
+            {isProcessing && !messages.some(
+              (m) => m.role === "assistant" && m.parts.some(
+                (p) => p.type === "text" || p.type.startsWith("tool-")
+              )
+            ) && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.2 }}
+                >
+                  <StreamingIndicator />
+                </motion.div>
+              )}
           </AnimatePresence>
         </div>
       </ScrollArea>
@@ -229,27 +243,53 @@ export function SearchAgent({
           <input
             ref={inputRef}
             type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={
-              isProcessing ? "Searching..." : "Ask a follow-up question..."
+              isProcessing ? "Generating..." : "Ask a follow-up question..."
             }
             disabled={isProcessing}
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:opacity-50"
           />
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => handleSubmit(inputValue)}
-            disabled={isProcessing || !inputValue.trim()}
-          >
+          <AnimatePresence mode="wait" initial={false}>
             {isProcessing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <motion.div
+                key="stop"
+                initial={{ scale: 0, rotate: -90 }}
+                animate={{ scale: 1, rotate: 0 }}
+                exit={{ scale: 0, rotate: 90 }}
+                transition={{ duration: 0.15 }}
+              >
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleCancel}
+                  className="h-6 w-6 p-0"
+                >
+                  <Square className="h-4 w-4 fill-black" />
+                </Button>
+              </motion.div>
             ) : (
-              <span className="text-xs text-muted-foreground">Enter</span>
+              <motion.div
+                key="send"
+                initial={{ scale: 0, rotate: 90 }}
+                animate={{ scale: 1, rotate: 0 }}
+                exit={{ scale: 0, rotate: -90 }}
+                transition={{ duration: 0.15 }}
+              >
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleSubmit}
+                  disabled={!input.trim()}
+                  className="h-6 w-6 p-0 rounded-full bg-black hover:bg-black"
+                >
+                  <ArrowUp className="h-4 w-4 text-white" />
+                </Button>
+              </motion.div>
             )}
-          </Button>
+          </AnimatePresence>
         </div>
       </div>
     </motion.div>
@@ -260,10 +300,33 @@ function MessageBubble({
   message,
   onFileClick,
 }: {
-  message: AgentSearchMessage;
-  onFileClick: (file: FileItem) => void;
+  message: AIUIMessage;
+  onFileClick: (file: { id: number; folder_id?: number | null }) => void;
 }) {
   const isUser = message.role === "user";
+
+  // Extract text content from parts
+  const textContent = message.parts
+    .filter((part) => part.type === "text")
+    .map((part) => (part as { type: "text"; text: string }).text)
+    .join("");
+
+  // Extract tool calls for display (tool parts have type starting with "tool-")
+  const toolCalls = message.parts
+    .filter((part) => part.type.startsWith("tool-"))
+    .map((part) => part as unknown as ToolPartWithOutput);
+
+  // Extract display_files tool for rendering
+  const displayFilesTool = toolCalls.find(
+    (tool) => tool.type === "tool-display_files"
+  );
+  const displayFilesOutput = displayFilesTool?.state === "output-available"
+    ? displayFilesTool.output as DisplayFilesOutput
+    : undefined;
+  const isDisplayFilesLoading = displayFilesTool && displayFilesTool.state !== "output-available";
+
+  // Filter out display_files from tool indicators (we render it differently)
+  const otherToolCalls = toolCalls.filter((tool) => tool.type !== "tool-display_files");
 
   return (
     <div className={cn("flex gap-3", isUser && "flex-row-reverse")}>
@@ -277,36 +340,90 @@ function MessageBubble({
       </div>
 
       <div className={cn("flex-1 space-y-3", isUser && "text-right")}>
-        <div
-          className={cn(
-            "inline-block px-4 py-2 rounded-2xl text-sm max-w-[85%]",
-            isUser
-              ? "bg-primary text-primary-foreground rounded-tr-md"
-              : "bg-muted rounded-tl-md text-left"
-          )}
-        >
-          <div className="whitespace-pre-wrap">{message.content}</div>
-        </div>
-
-        {/* File results from message */}
-        {message.files && message.files.length > 0 && (
-          <div className="space-y-2">
-            <AnimatePresence>
-              {message.files.map((result, index) => (
+        {/* Tool calls indicator (excluding display_files) */}
+        {!isUser && otherToolCalls.length > 0 && (
+          <div className="space-y-1">
+            {otherToolCalls.map((tool, idx) => {
+              // Extract tool name from type (e.g., "tool-search_files" -> "search_files")
+              const toolName = tool.type.replace("tool-", "");
+              return (
                 <motion.div
-                  key={result.file.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.1, duration: 0.3 }}
+                  key={`${tool.toolCallId || idx}-${idx}`}
+                  initial={{ scale: 0.95, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 text-xs w-fit"
                 >
-                  <FileResultCard
-                    file={result.file}
-                    description={result.description}
-                    onClick={() => onFileClick(result.file)}
-                  />
+                  {tool.state === "output-available" ? (
+                    <span className="text-green-500">✓</span>
+                  ) : (
+                    <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                  )}
+                  <span className="text-muted-foreground">
+                    {formatToolName(toolName)}
+                  </span>
                 </motion.div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Display files loading state */}
+        {!isUser && isDisplayFilesLoading && (
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/50 text-xs w-fit"
+          >
+            <Loader2 className="h-3 w-3 animate-spin text-primary" />
+            <span className="text-muted-foreground">Preparing results...</span>
+          </motion.div>
+        )}
+
+        {/* Display files result as clickable cards */}
+        {!isUser && displayFilesOutput && (
+          <div className="space-y-2">
+            {displayFilesOutput.summary && (
+              <p className="text-sm text-muted-foreground px-1">
+                {displayFilesOutput.summary}
+              </p>
+            )}
+            <div className="space-y-2">
+              {displayFilesOutput.files.map((file) => (
+                <FileResultCard
+                  key={file.id}
+                  file={{
+                    id: file.id,
+                    title: file.title,
+                    file_type: file.file_type as FileType,
+                    mime_type: file.mime_type,
+                    folder_id: file.folder_id ?? null,
+                    folder: file.folder_name ? { name: file.folder_name } : undefined,
+                  }}
+                  description={file.description || ""}
+                  onClick={() => onFileClick({ id: file.id, folder_id: file.folder_id })}
+                />
               ))}
-            </AnimatePresence>
+            </div>
+          </div>
+        )}
+
+        {/* Message content */}
+        {textContent && (
+          <div
+            className={cn(
+              "inline-block px-4 py-2 rounded-2xl text-sm max-w-[85%]",
+              isUser
+                ? "bg-primary text-primary-foreground rounded-tr-md"
+                : "bg-muted rounded-tl-md text-left"
+            )}
+          >
+            {isUser ? (
+              <div className="whitespace-pre-wrap">{textContent}</div>
+            ) : (
+              <div className="prose prose-sm dark:prose-invert max-w-none break-all prose-p:my-1 prose-ul:my-1 prose-ol:my-1 prose-li:my-0.5">
+                <Markdown>{textContent}</Markdown>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -314,64 +431,34 @@ function MessageBubble({
   );
 }
 
-function StreamingResponse({
-  progress,
-  text,
-}: {
-  progress: AgentSearchProgress | null;
-  text: string;
-}) {
-  const isError = progress?.status === "error";
-  const isCalling = progress?.status === "calling";
-  const isThinking = progress?.status === "thinking";
-
+function StreamingIndicator() {
   return (
     <div className="flex gap-3">
       <div className="flex-shrink-0 w-8 h-8 rounded-full bg-muted flex items-center justify-center">
         <Bot className="h-4 w-4" />
       </div>
-      <div className="flex-1 space-y-2">
-        {/* Progress indicator */}
-        {progress && (isThinking || isCalling) && (
-          <motion.div
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            className="flex items-center gap-2 px-4 py-2 rounded-2xl rounded-tl-md bg-muted text-sm w-fit"
-          >
-            {isError ? (
-              <AlertCircle className="h-4 w-4 text-destructive" />
-            ) : (
-              <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            )}
-            <span className="text-muted-foreground">
-              {progress.message || "Processing..."}
-            </span>
-            {isCalling && progress.toolName && (
-              <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                {progress.toolName}
-              </span>
-            )}
-          </motion.div>
-        )}
-
-        {/* Streaming text */}
-        {text && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="px-4 py-2 rounded-2xl rounded-tl-md bg-muted text-sm"
-          >
-            <div className="whitespace-pre-wrap">{text}</div>
-            <motion.span
-              animate={{ opacity: [1, 0] }}
-              transition={{ repeat: Infinity, duration: 0.8 }}
-              className="inline-block w-2 h-4 bg-primary ml-1 align-middle"
-            />
-          </motion.div>
-        )}
+      <div className="flex-1">
+        <motion.div
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="flex items-center gap-2 px-4 py-2 rounded-2xl rounded-tl-md bg-muted text-sm w-fit"
+        >
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          <span className="text-muted-foreground">Searching...</span>
+        </motion.div>
       </div>
     </div>
   );
+}
+
+// Simplified file type for display_files tool output
+interface DisplayFile {
+  id: number;
+  title: string;
+  file_type: FileType;
+  mime_type?: string;
+  folder_id: number | null;
+  folder?: { name: string };
 }
 
 function FileResultCard({
@@ -379,7 +466,7 @@ function FileResultCard({
   description,
   onClick,
 }: {
-  file: FileItem;
+  file: DisplayFile;
   description: string;
   onClick: () => void;
 }) {
@@ -408,9 +495,11 @@ function FileResultCard({
             <p className="font-medium text-sm truncate">{file.title}</p>
             <ArrowRight className="h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground" />
           </div>
-          <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
-            {description}
-          </p>
+          {description && (
+            <p className="text-xs text-muted-foreground line-clamp-2 mt-1">
+              {description}
+            </p>
+          )}
           {file.folder && (
             <p className="text-xs text-muted-foreground/70 mt-1">
               in {file.folder.name}
@@ -420,4 +509,11 @@ function FileResultCard({
       </div>
     </motion.button>
   );
+}
+
+function formatToolName(toolName: string): string {
+  return toolName
+    .split("_")
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(" ");
 }

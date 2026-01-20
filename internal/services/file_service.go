@@ -9,15 +9,16 @@ import (
 
 // FileListOptions contains options for listing files
 type FileListOptions struct {
-	Keyword   string
-	FolderID  *uint
-	TagIDs    []uint
-	FileTypes []models.FileType
-	Status    *models.FileProcessingStatus
-	SortBy    string // "created_at", "title", "size", "updated_at"
-	SortOrder string // "asc", "desc"
-	Limit     int
-	Offset    int
+	Keyword    string
+	FolderID   *uint
+	AllFolders bool // When true, search across all folders (ignores FolderID)
+	TagIDs     []uint
+	FileTypes  []models.FileType
+	Status     *models.FileProcessingStatus
+	SortBy     string // "created_at", "title", "size", "updated_at"
+	SortOrder  string // "asc", "desc"
+	Limit      int
+	Offset     int
 }
 
 // FileService handles file-related operations
@@ -112,11 +113,13 @@ func (s *fileService) ListFiles(userID string, opts FileListOptions) ([]models.F
 
 	query := s.db.Model(&models.File{}).Where("user_id = ?", userID)
 
-	// Filter by folder
-	if opts.FolderID != nil {
-		query = query.Where("folder_id = ?", *opts.FolderID)
-	} else {
-		query = query.Where("folder_id IS NULL")
+	// Filter by folder (skip if AllFolders is true)
+	if !opts.AllFolders {
+		if opts.FolderID != nil {
+			query = query.Where("folder_id = ?", *opts.FolderID)
+		} else {
+			query = query.Where("folder_id IS NULL")
+		}
 	}
 
 	// Keyword search
@@ -149,10 +152,12 @@ func (s *fileService) ListFiles(userID string, opts FileListOptions) ([]models.F
 
 	// Build new query for results with preloading
 	query = s.db.Model(&models.File{}).Where("user_id = ?", userID)
-	if opts.FolderID != nil {
-		query = query.Where("folder_id = ?", *opts.FolderID)
-	} else {
-		query = query.Where("folder_id IS NULL")
+	if !opts.AllFolders {
+		if opts.FolderID != nil {
+			query = query.Where("folder_id = ?", *opts.FolderID)
+		} else {
+			query = query.Where("folder_id IS NULL")
+		}
 	}
 	if opts.Keyword != "" {
 		searchPattern := "%" + opts.Keyword + "%"
