@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useSessionStorage } from "@uidotdev/usehooks";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Sparkles, MessageSquare } from "lucide-react";
 import type { UIMessage } from "ai";
@@ -41,9 +40,30 @@ export function SearchCommand({ open, onOpenChange }: SearchCommandProps) {
   const [agentQuery, setAgentQuery] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Persist chat history in sessionStorage
-  const [chatHistory, setChatHistory] = useSessionStorage<UIMessage[]>("search-chat-history", []);
-  const hasChatHistory = chatHistory.length > 0;
+  // Persist chat history in sessionStorage (SSR-safe)
+  const [chatHistory, setChatHistoryState] = useState<UIMessage[]>([]);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  // Load from sessionStorage on mount (client-side only)
+  useEffect(() => {
+    const stored = sessionStorage.getItem("search-chat-history");
+    if (stored) {
+      try {
+        setChatHistoryState(JSON.parse(stored));
+      } catch {
+        // Ignore parse errors
+      }
+    }
+    setIsHydrated(true);
+  }, []);
+
+  // Save to sessionStorage when chat history changes
+  const setChatHistory = useCallback((messages: UIMessage[]) => {
+    setChatHistoryState(messages);
+    sessionStorage.setItem("search-chat-history", JSON.stringify(messages));
+  }, []);
+
+  const hasChatHistory = isHydrated && chatHistory.length > 0;
 
   // Debounced search
   const performSearch = useCallback(

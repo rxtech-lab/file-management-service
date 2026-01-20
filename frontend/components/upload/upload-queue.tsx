@@ -41,7 +41,7 @@ export function UploadQueue({
   return (
     <Card
       className={cn(
-        "fixed bottom-4 right-4 w-96 shadow-lg z-50 transition-all",
+        "fixed bottom-4 right-4 w-[450px] shadow-lg z-50 transition-all overflow-hidden",
         !isExpanded && "h-auto",
       )}
     >

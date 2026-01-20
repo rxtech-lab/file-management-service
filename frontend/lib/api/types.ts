@@ -83,6 +83,7 @@ export interface FileItem {
   processing_status: ProcessingStatus;
   processing_error?: string;
   has_embedding: boolean;
+  invoice_id?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -229,11 +230,18 @@ export interface AgentEvent {
   data?: unknown;
   tool?: string;
   file_id?: number;
+  folder_id?: number;
 }
 
 export interface OrganizeFileResponse {
   message: string;
   file_id: number;
+  stream_url: string;
+}
+
+export interface OrganizeFolderResponse {
+  message: string;
+  folder_id: number;
   stream_url: string;
 }
 
@@ -270,4 +278,28 @@ export interface AgentSearchProgress {
 export interface FileSearchResult {
   file: FileItem;
   description: string;
+}
+
+// Processing Stream Events (unified events for file processing)
+export type ProcessingEventType =
+  | "status"
+  | "tool_call"
+  | "tool_result"
+  | "thinking"
+  | "result"
+  | "error"
+  | "invoice"
+  | "complete"
+  | "connected"
+  | "done";
+
+export type ProcessingEventSource = "system" | "invoice" | "agent";
+
+export interface ProcessingEvent {
+  type: ProcessingEventType;
+  source: ProcessingEventSource;
+  message: string;
+  data?: unknown;
+  tool?: string;
+  file_id?: number;
 }

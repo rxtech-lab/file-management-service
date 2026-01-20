@@ -154,6 +154,11 @@ func fileModelToGenerated(file *models.File) generated.File {
 		result.ProcessingError = &file.ProcessingError
 	}
 
+	if file.InvoiceID != nil {
+		invoiceID := int(*file.InvoiceID)
+		result.InvoiceId = &invoiceID
+	}
+
 	return result
 }
 

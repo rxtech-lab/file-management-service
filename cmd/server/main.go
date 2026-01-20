@@ -46,6 +46,7 @@ func main() {
 	summaryService := initSummaryService()
 	searchService := services.NewSearchService(db, embeddingService)
 	agentService := initAgentService(tagService, fileService, folderService)
+	invoiceService := initInvoiceService()
 
 	// Initialize MCP server
 	mcpSrv := mcpserver.NewMCPServer(
@@ -71,6 +72,7 @@ func main() {
 		searchService,
 		summaryService,
 		agentService,
+		invoiceService,
 		mcpSrv.GetServer(),
 	)
 
@@ -240,6 +242,21 @@ func initAgentService(
 
 	log.Printf("AI Agent service initialized (model: %s, maxTurns: %d)", model, maxTurns)
 	return services.NewAgentService(config, tagService, fileService, folderService)
+}
+
+func initInvoiceService() services.InvoiceService {
+	serverURL := os.Getenv("INVOICE_SERVER_URL")
+	if serverURL == "" {
+		log.Println("Warning: INVOICE_SERVER_URL not configured, invoice processing disabled")
+		return nil
+	}
+
+	config := services.InvoiceConfig{
+		ServerURL: serverURL,
+	}
+
+	log.Printf("Invoice service initialized (server: %s)", serverURL)
+	return services.NewInvoiceService(config)
 }
 
 func getEnvOrDefault(key, defaultValue string) string {

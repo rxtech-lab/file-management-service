@@ -64,6 +64,7 @@ func NewTestSetup(t *testing.T) *TestSetup {
 		searchService,
 		summaryService,
 		agentService,
+		nil, // No invoice service for tests
 		nil, // No MCP server for tests
 	)
 
@@ -281,6 +282,13 @@ func SetupTestAuthMiddleware(app *fiber.App) {
 				Sub: userID,
 			}
 			c.Locals(middleware.AuthenticatedUserContextKey, user)
+
+			// Also set raw auth token if provided (for invoice processing tests)
+			// This uses the same key as the OAuth middleware: middleware.RawAuthTokenContextKey
+			authToken := c.Get("X-Test-Auth-Token")
+			if authToken != "" {
+				c.Locals(middleware.RawAuthTokenContextKey, authToken)
+			}
 		}
 		return c.Next()
 	})

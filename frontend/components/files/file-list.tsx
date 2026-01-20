@@ -12,7 +12,9 @@ import {
   Info,
   Trash2,
   Sparkles,
+  ExternalLink,
 } from "lucide-react";
+import { useFileAction } from "@/hooks/use-file-action";
 import {
   Table,
   TableBody,
@@ -31,6 +33,9 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -366,6 +371,11 @@ function FileTableRow({
   onDelete: (file: FileItem) => void;
 }) {
   const rowRef = useRef<HTMLTableRowElement>(null);
+  const { canOpen, getOpenHandlers, handleDoubleClick, handleOpenWith } =
+    useFileAction();
+
+  const fileCanOpen = canOpen(file);
+  const handlers = getOpenHandlers(file);
 
   // Handle highlight animation and scroll into view
   useEffect(() => {
@@ -391,6 +401,7 @@ function FileTableRow({
                 onSelect?.(file, e.metaKey || e.ctrlKey);
                 onClick?.(file);
               }}
+              onDoubleClick={() => handleDoubleClick(file)}
             >
               <TableCell>
                 <Checkbox
@@ -464,6 +475,36 @@ function FileTableRow({
       </Tooltip>
 
       <ContextMenuContent className="w-48">
+        {handlers.length > 0 && (
+          <>
+            <ContextMenuSub>
+              <ContextMenuSubTrigger disabled={!fileCanOpen}>
+                <ExternalLink className="mr-2 h-4 w-4" />
+                Open with
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent className="w-48">
+                {handlers.map(({ plugin, isDefault }) => {
+                  const IconComponent = plugin.icon;
+                  return (
+                    <ContextMenuItem
+                      key={plugin.id}
+                      onClick={() => handleOpenWith(file, plugin.id)}
+                    >
+                      <IconComponent className="mr-2 h-4 w-4" />
+                      {plugin.name}
+                      {isDefault && (
+                        <span className="ml-auto text-xs text-muted-foreground">
+                          Default
+                        </span>
+                      )}
+                    </ContextMenuItem>
+                  );
+                })}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+            <ContextMenuSeparator />
+          </>
+        )}
         <ContextMenuItem onClick={() => onRename?.(file)}>
           <Pencil className="mr-2 h-4 w-4" />
           Rename

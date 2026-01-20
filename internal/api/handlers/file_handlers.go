@@ -14,6 +14,7 @@ import (
 	"github.com/rxtech-lab/invoice-management/internal/api/generated"
 	"github.com/rxtech-lab/invoice-management/internal/models"
 	"github.com/rxtech-lab/invoice-management/internal/services"
+	"github.com/rxtech-lab/invoice-management/internal/utils"
 )
 
 // ListFiles implements generated.StrictServerInterface
@@ -310,8 +311,11 @@ func (h *StrictHandlers) ProcessFile(
 		return nil, err
 	}
 
+	// Extract auth token for invoice processing
+	authToken, _ := utils.GetRawAuthToken(ctx)
+
 	// Start async processing
-	go h.processFileAsync(userID, file.ID)
+	go h.processFileAsync(userID, file.ID, authToken)
 
 	return generated.ProcessFile202JSONResponse{
 		Message: "File processing started",
@@ -320,7 +324,7 @@ func (h *StrictHandlers) ProcessFile(
 }
 
 // processFileAsync handles file processing in a background goroutine
-func (h *StrictHandlers) processFileAsync(userID string, fileID uint) {
+func (h *StrictHandlers) processFileAsync(userID string, fileID uint, authToken string) {
 	ctx := context.Background()
 
 	// Get file
@@ -361,6 +365,31 @@ func (h *StrictHandlers) processFileAsync(userID string, fileID uint) {
 	if err := h.fileService.UpdateFileContent(userID, fileID, parsedContent.TextContent, summary, detectedFileType); err != nil {
 		h.fileService.UpdateFileProcessingStatus(userID, fileID, models.FileStatusFailed, "Failed to update content: "+err.Error())
 		return
+	}
+
+	// Process invoice via external API if file is detected as invoice
+	if detectedFileType == models.FileTypeInvoice && h.invoiceService != nil && h.invoiceService.IsEnabled() && authToken != "" {
+		log.Printf("[Invoice] Processing file %d as invoice", fileID)
+
+		// Create event channel for logging
+		invoiceEventChan := make(chan services.InvoiceStreamEvent, 100)
+		go func() {
+			for event := range invoiceEventChan {
+				log.Printf("[Invoice] File %d: %s - %s", fileID, event.Status, event.Message)
+			}
+		}()
+
+		result, err := h.invoiceService.ProcessInvoice(ctx, downloadURL, authToken, invoiceEventChan)
+		if err != nil {
+			log.Printf("[Invoice] File %d processing warning: %v", fileID, err)
+			// Don't fail file processing - invoice processing is best-effort
+		} else if result != nil {
+			if err := h.fileService.UpdateFileInvoiceID(userID, fileID, result.InvoiceID); err != nil {
+				log.Printf("[Invoice] File %d: failed to store invoice_id: %v", fileID, err)
+			} else {
+				log.Printf("[Invoice] File %d: stored invoice_id=%d", fileID, result.InvoiceID)
+			}
+		}
 	}
 
 	// Run AI agent to organize file (best-effort, non-blocking errors)

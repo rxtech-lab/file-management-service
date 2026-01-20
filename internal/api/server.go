@@ -36,6 +36,7 @@ type APIServer struct {
 	searchService          services.SearchService
 	summaryService         services.SummaryService
 	agentService           services.AgentService
+	invoiceService         services.InvoiceService
 	mcpServer              *mcpserver.MCPServer
 	mcprouterAuthenticator *auth.ApikeyAuthenticator
 	oauthAuthenticator     *middleware.OAuthAuthenticator
@@ -55,6 +56,7 @@ func NewAPIServer(
 	searchService services.SearchService,
 	summaryService services.SummaryService,
 	agentService services.AgentService,
+	invoiceService services.InvoiceService,
 	mcpServer *mcpserver.MCPServer,
 ) *APIServer {
 	app := fiber.New(fiber.Config{
@@ -128,6 +130,7 @@ func NewAPIServer(
 		searchService:          searchService,
 		summaryService:         summaryService,
 		agentService:           agentService,
+		invoiceService:         invoiceService,
 		mcpServer:              mcpServer,
 		mcprouterAuthenticator: mcprouterAuthenticator,
 		oauthAuthenticator:     oauthAuthenticator,
@@ -170,10 +173,32 @@ func (s *APIServer) SetupRoutes() {
 		s.searchService,
 		s.summaryService,
 		s.agentService,
+		s.invoiceService,
 	)
 
 	// Create agent handlers for SSE streaming
-	agentHandlers := handlers.NewAgentHandlers(s.agentService, s.fileService)
+	agentHandlers := handlers.NewAgentHandlers(s.agentService, s.fileService, s.folderService)
+
+	// Create processing handlers for unified file processing stream
+	processingHandlers := handlers.NewProcessingHandlers(
+		s.fileService,
+		s.uploadService,
+		s.contentParserService,
+		s.embeddingService,
+		s.summaryService,
+		s.agentService,
+		s.invoiceService,
+	)
+
+	// Register SSE routes BEFORE generated handlers (custom routes take precedence)
+	// These routes require authentication via middleware already applied
+	s.app.Get("/api/files/:id/agent-stream", agentHandlers.StreamAgentProgress)
+	s.app.Post("/api/files/:id/organize", agentHandlers.TriggerAgentOrganize)
+	s.app.Get("/api/agent/status", agentHandlers.GetAgentStatus)
+	s.app.Get("/api/files/:id/process-stream", processingHandlers.StreamFileProcessing)
+	// Folder agent routes
+	s.app.Get("/api/folders/:id/agent-stream", agentHandlers.StreamFolderAgentProgress)
+	s.app.Post("/api/folders/:id/organize", agentHandlers.TriggerFolderOrganize)
 
 	// Create strict handler wrapper (converts StrictServerInterface to ServerInterface)
 	strictHandler := generated.NewStrictHandler(strictHandlers, nil)
@@ -199,17 +224,17 @@ func (s *APIServer) SetupRoutes() {
 
 				// Pass authenticated user to Go context for strict handlers
 				ctx := utils.WithAuthenticatedUser(c.UserContext(), user.(*utils.AuthenticatedUser))
+
+				// Pass raw auth token to Go context (for downstream API calls like invoice processing)
+				if rawToken := c.Locals(middleware.RawAuthTokenContextKey); rawToken != nil {
+					ctx = utils.WithRawAuthToken(ctx, rawToken.(string))
+				}
+
 				c.SetUserContext(ctx)
 				return c.Next()
 			},
 		},
 	})
-
-	// Register agent SSE routes (these need special handling for streaming)
-	// These routes require authentication
-	s.app.Get("/api/files/:id/agent-stream", agentHandlers.StreamAgentProgress)
-	s.app.Post("/api/files/:id/organize", agentHandlers.TriggerAgentOrganize)
-	s.app.Get("/api/agent/status", agentHandlers.GetAgentStatus)
 }
 
 // EnableAuthentication enables authentication middleware (OAuth and/or MCPRouter)

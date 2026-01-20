@@ -30,6 +30,7 @@ type StrictHandlers struct {
 	searchService        services.SearchService
 	summaryService       services.SummaryService
 	agentService         services.AgentService
+	invoiceService       services.InvoiceService
 }
 
 // NewStrictHandlers creates a new StrictHandlers instance
@@ -43,6 +44,7 @@ func NewStrictHandlers(
 	searchService services.SearchService,
 	summaryService services.SummaryService,
 	agentService services.AgentService,
+	invoiceService services.InvoiceService,
 ) *StrictHandlers {
 	return &StrictHandlers{
 		tagService:           tagService,
@@ -54,6 +56,7 @@ func NewStrictHandlers(
 		searchService:        searchService,
 		summaryService:       summaryService,
 		agentService:         agentService,
+		invoiceService:       invoiceService,
 	}
 }
 

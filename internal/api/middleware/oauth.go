@@ -186,6 +186,9 @@ func FiberOAuthMiddleware(authenticator *OAuthAuthenticator, onSuccess func(*fib
 		// Extract user from claims
 		user := authenticator.ExtractUser(claims)
 
+		// Store raw token for downstream API calls (e.g., invoice processing)
+		c.Locals(RawAuthTokenContextKey, tokenString)
+
 		// Call success callback
 		if onSuccess != nil {
 			if err := onSuccess(c, user); err != nil {

@@ -16,15 +16,17 @@ import (
 
 // AgentHandlers handles AI agent-related HTTP endpoints
 type AgentHandlers struct {
-	agentService services.AgentService
-	fileService  services.FileService
+	agentService  services.AgentService
+	fileService   services.FileService
+	folderService services.FolderService
 }
 
 // NewAgentHandlers creates a new AgentHandlers instance
-func NewAgentHandlers(agentService services.AgentService, fileService services.FileService) *AgentHandlers {
+func NewAgentHandlers(agentService services.AgentService, fileService services.FileService, folderService services.FolderService) *AgentHandlers {
 	return &AgentHandlers{
-		agentService: agentService,
-		fileService:  fileService,
+		agentService:  agentService,
+		fileService:   fileService,
+		folderService: folderService,
 	}
 }
 
@@ -193,4 +195,160 @@ func (h *AgentHandlers) GetAgentStatus(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
 		"enabled": enabled,
 	})
+}
+
+// TriggerFolderOrganize triggers the AI agent to organize a folder's contents
+// POST /api/folders/:id/organize
+func (h *AgentHandlers) TriggerFolderOrganize(c *fiber.Ctx) error {
+	// Get authenticated user
+	user := c.Locals(middleware.AuthenticatedUserContextKey)
+	if user == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+	authenticatedUser := user.(*utils.AuthenticatedUser)
+	userID := authenticatedUser.Sub
+
+	// Parse folder ID
+	folderIDStr := c.Params("id")
+	folderID, err := strconv.ParseUint(folderIDStr, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid folder ID"})
+	}
+
+	// Check if agent is enabled
+	if h.agentService == nil || !h.agentService.IsEnabled() {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "AI agent is not enabled"})
+	}
+
+	// Verify folder ownership
+	folder, err := h.folderService.GetFolderByID(userID, uint(folderID))
+	if err != nil || folder == nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Folder not found"})
+	}
+
+	// Return the stream URL for the client to subscribe to
+	return c.JSON(fiber.Map{
+		"message":    "Agent folder organization started",
+		"folder_id":  folderID,
+		"stream_url": fmt.Sprintf("/api/folders/%d/agent-stream", folderID),
+	})
+}
+
+// StreamFolderAgentProgress handles SSE streaming of folder agent progress
+// GET /api/folders/:id/agent-stream
+func (h *AgentHandlers) StreamFolderAgentProgress(c *fiber.Ctx) error {
+	// Get authenticated user
+	user := c.Locals(middleware.AuthenticatedUserContextKey)
+	if user == nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+	authenticatedUser := user.(*utils.AuthenticatedUser)
+	userID := authenticatedUser.Sub
+
+	// Parse folder ID
+	folderIDStr := c.Params("id")
+	folderID, err := strconv.ParseUint(folderIDStr, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid folder ID"})
+	}
+
+	// Check if agent is enabled
+	if h.agentService == nil || !h.agentService.IsEnabled() {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{"error": "AI agent is not enabled"})
+	}
+
+	// Get folder to verify ownership
+	folder, err := h.folderService.GetFolderByID(userID, uint(folderID))
+	if err != nil || folder == nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Folder not found"})
+	}
+
+	// Set SSE headers
+	c.Set("Content-Type", "text/event-stream")
+	c.Set("Cache-Control", "no-cache")
+	c.Set("Connection", "keep-alive")
+	c.Set("Transfer-Encoding", "chunked")
+	c.Set("X-Accel-Buffering", "no") // Disable nginx buffering
+
+	// Create context with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+
+	// Create event channel
+	eventChan := make(chan services.AgentEvent, 100)
+
+	// Run agent in goroutine (don't include subfolders by default)
+	go func() {
+		defer close(eventChan)
+		err := h.agentService.OrganizeFolder(ctx, userID, uint(folderID), false, eventChan)
+		if err != nil {
+			eventChan <- services.AgentEvent{
+				Type:     "error",
+				Message:  fmt.Sprintf("Agent error: %v", err),
+				FolderID: uint(folderID),
+			}
+		}
+	}()
+
+	// Stream events to client
+	c.Context().SetBodyStreamWriter(func(w *bufio.Writer) {
+		defer cancel() // Cancel context when streaming ends
+
+		// Send initial connection event
+		data, _ := json.Marshal(services.AgentEvent{
+			Type:     "connected",
+			Message:  "Connected to folder agent stream",
+			FolderID: uint(folderID),
+		})
+		fmt.Fprintf(w, "data: %s\n\n", data)
+		w.Flush()
+
+		for {
+			select {
+			case event, ok := <-eventChan:
+				if !ok {
+					// Channel closed, send done event
+					data, _ := json.Marshal(services.AgentEvent{
+						Type:     "done",
+						Message:  "Folder agent processing complete",
+						FolderID: uint(folderID),
+					})
+					fmt.Fprintf(w, "data: %s\n\n", data)
+					w.Flush()
+					return
+				}
+				data, err := json.Marshal(event)
+				if err != nil {
+					continue
+				}
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				w.Flush()
+
+				// If this is a result or error, we're done
+				if event.Type == "result" || event.Type == "error" {
+					// Send done event
+					doneData, _ := json.Marshal(services.AgentEvent{
+						Type:     "done",
+						Message:  "Stream complete",
+						FolderID: uint(folderID),
+					})
+					fmt.Fprintf(w, "data: %s\n\n", doneData)
+					w.Flush()
+					return
+				}
+
+			case <-ctx.Done():
+				// Context cancelled/timeout
+				data, _ := json.Marshal(services.AgentEvent{
+					Type:     "error",
+					Message:  "Request timeout",
+					FolderID: uint(folderID),
+				})
+				fmt.Fprintf(w, "data: %s\n\n", data)
+				w.Flush()
+				return
+			}
+		}
+	})
+
+	return nil
 }

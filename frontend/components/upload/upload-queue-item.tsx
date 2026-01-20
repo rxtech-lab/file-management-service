@@ -1,6 +1,6 @@
 "use client";
 
-import { X, RotateCcw, Check, Loader2, AlertCircle, Sparkles } from "lucide-react";
+import { X, RotateCcw, Check, Loader2, AlertCircle, Sparkles, Receipt } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -36,12 +36,12 @@ function getStatusText(item: UploadQueueItem): string {
     case "creating":
       return "Creating file record...";
     case "processing":
-      // Show agent status if available
-      if (item.agentStatus) {
-        return item.agentStatus;
+      // Show processing message if available
+      if (item.processingMessage) {
+        return item.processingMessage;
       }
       if (item.processingStatus === "processing") {
-        return "AI analyzing...";
+        return "Processing...";
       }
       return "Waiting for processing...";
     case "completed":
@@ -67,8 +67,8 @@ export function UploadQueueItemComponent({
     item.status === "processing";
 
   return (
-    <div className="p-3 border-b last:border-b-0">
-      <div className="flex items-start gap-3">
+    <div className="p-3 border-b last:border-b-0 w-full overflow-hidden">
+      <div className="flex items-start gap-3 w-full">
         {/* File icon */}
         <div
           className={cn("mt-0.5", getFileTypeColor(undefined, item.file.type))}
@@ -77,7 +77,7 @@ export function UploadQueueItemComponent({
         </div>
 
         {/* Content */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 overflow-hidden">
           <div className="flex items-center justify-between gap-2">
             <p className="font-medium text-sm truncate">{item.file.name}</p>
 
@@ -119,19 +119,24 @@ export function UploadQueueItemComponent({
           )}
 
           {/* Status text */}
-          <div
+          <p
             className={cn(
-              "text-xs mt-1 flex items-center gap-1",
+              "text-xs mt-1 max-w-[400px]",
               item.status === "failed"
                 ? "text-destructive"
                 : "text-muted-foreground",
             )}
+            style={{ overflowWrap: "break-word", wordBreak: "break-word" }}
           >
-            {item.status === "processing" && item.agentStatus && (
-              <Sparkles className="h-3 w-3 text-purple-500 animate-pulse" />
+            {item.status === "processing" && item.processingMessage && (
+              item.processingSource === "invoice" ? (
+                <Receipt className="inline h-3 w-3 mr-1 text-blue-500 animate-pulse" />
+              ) : item.processingSource === "agent" ? (
+                <Sparkles className="inline h-3 w-3 mr-1 text-purple-500 animate-pulse" />
+              ) : null
             )}
-            <span>{getStatusText(item)}</span>
-          </div>
+            {getStatusText(item)}
+          </p>
 
           {/* File size */}
           <p className="text-xs text-muted-foreground">
