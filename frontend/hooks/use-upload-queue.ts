@@ -14,12 +14,12 @@ export interface UploadQueueItem {
   id: string;
   file: File;
   status:
-    | "queued"
-    | "uploading"
-    | "creating"
-    | "processing"
-    | "completed"
-    | "failed";
+  | "queued"
+  | "uploading"
+  | "creating"
+  | "processing"
+  | "completed"
+  | "failed";
   progress: number;
   s3Key?: string;
   fileId?: number;
@@ -55,10 +55,10 @@ export function useUploadQueue(folderId: number | null) {
             prev.map((item) =>
               item.id === itemId
                 ? {
-                    ...item,
-                    agentStatus: data.message,
-                    agentStep: data.type,
-                  }
+                  ...item,
+                  agentStatus: data.message,
+                  agentStep: data.type,
+                }
                 : item
             )
           );
@@ -222,7 +222,11 @@ export function useUploadQueue(folderId: number | null) {
     }
 
     setItems((prev) => prev.filter((item) => item.id !== id));
-  }, []);
+    setTimeout(() => {
+      console.log("refreshing");
+      router.refresh();
+    }, 1000);
+  }, [router]);
 
   const retryItem = useCallback(
     (id: string) => {

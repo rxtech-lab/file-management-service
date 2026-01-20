@@ -382,12 +382,6 @@ Start by examining the existing tags and folder structure.`,
 
 	// Agent loop
 	for turn := 0; turn < s.config.MaxTurns; turn++ {
-		eventChan <- AgentEvent{
-			Type:    "thinking",
-			Message: fmt.Sprintf("AI is thinking... (turn %d/%d)", turn+1, s.config.MaxTurns),
-			FileID:  fileID,
-		}
-
 		// Call LLM
 		response, err := s.callChatCompletions(ctx, messages)
 		if err != nil {

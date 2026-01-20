@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { LayoutGrid, List } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import { FolderBreadcrumb } from "@/components/folders/folder-breadcrumb";
 import { CreateFolderDialog } from "@/components/folders/create-folder-dialog";
 import { UploadQueue } from "@/components/upload/upload-queue";
 import { FileMetadataSheet } from "@/components/files/file-metadata-sheet";
-import { AIOrganizeDialog } from "@/components/ai/ai-organize-dialog";
+import { triggerAIOrganize } from "@/components/ai/ai-organize-dialog";
 import { DndProvider } from "@/components/dnd/dnd-provider";
 import { DroppableFolder } from "@/components/dnd/droppable-folder";
 import { useViewMode } from "@/hooks/use-view-mode";
@@ -49,14 +50,22 @@ export function FilesPageClient({
 
   const uploadQueue = useUploadQueue(currentFolder?.id ?? null);
 
+  // Auto-refresh the page every 10 seconds
+  useQuery({
+    queryKey: ["page-refresh", currentFolder?.id],
+    queryFn: async () => {
+      router.refresh();
+      return Date.now();
+    },
+    refetchInterval: 10000, // 10 seconds
+    refetchOnWindowFocus: true,
+  });
+
   // Create folder dialog
   const [showCreateFolder, setShowCreateFolder] = useState(false);
 
   // Metadata sheet state
   const [metadataFile, setMetadataFile] = useState<FileItem | null>(null);
-
-  // AI Organize dialog state
-  const [aiOrganizeFileId, setAiOrganizeFileId] = useState<number | null>(null);
 
   // File input ref for upload
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -154,7 +163,10 @@ export function FilesPageClient({
 
   // AI Organize handlers
   const handleFileAIOrganize = (file: FileItem) => {
-    setAiOrganizeFileId(file.id);
+    triggerAIOrganize(file.id, file.title, () => {
+      // Refresh the page when AI organization completes
+      router.refresh();
+    });
   };
 
   const handleFolderAIOrganize = (folder: Folder) => {
@@ -281,17 +293,6 @@ export function FilesPageClient({
         open={metadataFile !== null}
         onOpenChange={(open) => {
           if (!open) setMetadataFile(null);
-        }}
-      />
-
-      <AIOrganizeDialog
-        fileId={aiOrganizeFileId}
-        open={aiOrganizeFileId !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setAiOrganizeFileId(null);
-            router.refresh();
-          }
         }}
       />
     </DndProvider>

@@ -1,232 +1,214 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { toast } from "sonner";
+import { organizeFileAction } from "@/lib/actions/agent-actions";
+import type { AgentEvent } from "@/lib/api/types";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  Loader2,
-  Check,
-  AlertCircle,
   Sparkles,
   Wrench,
-  MessageSquare,
   Brain,
+  Check,
+  AlertCircle,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import type { AgentEvent } from "@/lib/api/types";
-import { organizeFileAction } from "@/lib/actions/agent-actions";
+import ReactMarkdown from "react-markdown";
 
-interface AIOrganizeDialogProps {
-  fileId: number | null;
-  fileName?: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onComplete?: () => void;
+/**
+ * Renders markdown content with proper styling
+ */
+function MarkdownContent({ content }: { content: string }) {
+  return (
+    <div className="text-foreground prose prose-sm max-w-none">
+      <ReactMarkdown
+        components={{
+          p: ({ children }) => <p className="my-1">{children}</p>,
+          strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+          em: ({ children }) => <em className="italic">{children}</em>,
+          code: ({ children }) => (
+            <code className="px-1 py-0.5 rounded bg-muted text-foreground font-mono text-xs">
+              {children}
+            </code>
+          ),
+          ul: ({ children }) => <ul className="list-disc pl-4 my-1">{children}</ul>,
+          ol: ({ children }) => <ol className="list-decimal pl-4 my-1">{children}</ol>,
+          li: ({ children }) => <li className="my-0.5">{children}</li>,
+        }}
+      >
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
 }
 
-export function AIOrganizeDialog({
-  fileId,
-  fileName,
-  open,
-  onOpenChange,
-  onComplete,
-}: AIOrganizeDialogProps) {
-  const [events, setEvents] = useState<AgentEvent[]>([]);
-  const [isComplete, setIsComplete] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+/**
+ * Renders description with proper styling
+ */
+function Description({ content }: { content: string }) {
+  return <div className="text-foreground">{content}</div>;
+}
 
-  const cleanup = useCallback(() => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
-    }
-  }, []);
+/**
+ * Triggers AI file organization with real-time toast updates
+ * @param fileId - The ID of the file to organize
+ * @param fileName - Optional file name for better feedback
+ * @param onComplete - Optional callback when organization completes
+ */
+export async function triggerAIOrganize(
+  fileId: number,
+  fileName?: string,
+  onComplete?: () => void
+): Promise<void> {
+  let toastId: string | number | undefined;
 
-  useEffect(() => {
-    if (!open || !fileId) {
-      cleanup();
+  try {
+    // Show initial loading toast
+    toastId = toast.loading(
+      <MarkdownContent content="Starting AI organization..." />,
+      {
+        description: fileName ? <Description content={`Organizing "${fileName}"`} /> : undefined,
+        icon: <Sparkles className="h-4 w-4 text-purple-500" />,
+        classNames: {
+          title: "text-foreground",
+          description: "text-foreground",
+        },
+      }
+    );
+
+    // Trigger the organize endpoint
+    const result = await organizeFileAction(fileId);
+    if (!result.success) {
+      toast.error(<MarkdownContent content="Failed to start AI agent" />, {
+        id: toastId,
+        description: <Description content={result.error || "Unknown error"} />,
+        icon: <AlertCircle className="h-4 w-4" />,
+        classNames: {
+          title: "text-foreground",
+          description: "text-foreground",
+        },
+      });
       return;
     }
 
-    // Reset state when opening
-    setEvents([]);
-    setIsComplete(false);
-    setError(null);
+    // Connect to SSE stream
+    const eventSource = new EventSource(`/api/agent-stream/${fileId}`);
+    let lastMessage = "Starting AI organization...";
 
-    const startAgent = async () => {
+    eventSource.onmessage = (event) => {
       try {
-        // First, trigger the organize endpoint to start the agent
-        const result = await organizeFileAction(fileId);
-        if (!result.success) {
-          setError(result.error || "Failed to start AI agent");
-          return;
-        }
+        const data = JSON.parse(event.data) as AgentEvent;
 
-        // Use Next.js API route to proxy the SSE stream with authentication
-        const eventSource = new EventSource(`/api/agent-stream/${fileId}`);
-        eventSourceRef.current = eventSource;
+        // Update the toast based on event type
+        switch (data.type) {
+          case "connected":
+            lastMessage = "Connected to AI agent";
+            toast.loading(<MarkdownContent content={lastMessage} />, {
+              id: toastId,
+              icon: <Sparkles className="h-4 w-4 text-blue-500" />,
+              classNames: {
+                title: "text-foreground",
+                description: "text-foreground",
+              },
+            });
+            break;
 
-        eventSource.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data) as AgentEvent;
-            setEvents((prev) => [...prev, data]);
+          case "status":
+            lastMessage = data.message;
+            toast.loading(<MarkdownContent content={lastMessage} />, {
+              id: toastId,
+              description: fileName ? <Description content={fileName} /> : undefined,
+              icon: <Sparkles className="h-4 w-4 text-blue-500" />,
+              classNames: {
+                title: "text-foreground",
+                description: "text-foreground",
+              },
+            });
+            break;
 
-            if (data.type === "result" || data.type === "done") {
-              setIsComplete(true);
-              cleanup();
-              if (data.type === "done" && onComplete) {
-                onComplete();
+          case "tool_call":
+            lastMessage = data.message;
+            toast.loading(<MarkdownContent content={lastMessage} />, {
+              id: toastId,
+              description: data.tool ? (
+                <Description content={`Using: ${data.tool}`} />
+              ) : fileName ? (
+                <Description content={fileName} />
+              ) : undefined,
+              icon: <Wrench className="h-4 w-4 text-orange-500" />,
+              classNames: {
+                title: "text-foreground",
+                description: "text-foreground",
+              },
+            });
+            break;
+
+          case "tool_result":
+            // Don't show tool results, just keep the loading state
+            break;
+
+          case "result":
+          case "done":
+            eventSource.close();
+            toast.success(
+              <MarkdownContent content={data.message || "File organized successfully!"} />,
+              {
+                id: toastId,
+                description: fileName ? <Description content={fileName} /> : undefined,
+                icon: <Check className="h-4 w-4" />,
+                duration: 4000,
+                classNames: {
+                  title: "text-foreground",
+                  description: "text-foreground",
+                },
               }
+            );
+            if (onComplete) {
+              onComplete();
             }
+            break;
 
-            if (data.type === "error") {
-              setError(data.message);
-              cleanup();
-            }
-          } catch {
-            console.error("Failed to parse agent event");
-          }
-        };
-
-        eventSource.onerror = () => {
-          setError("Connection to agent lost");
-          cleanup();
-        };
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to start AI agent");
+          case "error":
+            eventSource.close();
+            toast.error(
+              <MarkdownContent content={data.message || "AI organization failed"} />,
+              {
+                id: toastId,
+                description: fileName ? <Description content={fileName} /> : undefined,
+                icon: <AlertCircle className="h-4 w-4" />,
+                classNames: {
+                  title: "text-foreground",
+                  description: "text-foreground",
+                },
+              }
+            );
+            break;
+        }
+      } catch (error) {
+        console.error("Failed to parse agent event:", error);
       }
     };
 
-    startAgent();
-
-    return cleanup;
-  }, [open, fileId, cleanup, onComplete]);
-
-  // Auto-scroll to bottom when new events arrive
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [events]);
-
-  const handleClose = () => {
-    cleanup();
-    onOpenChange(false);
-  };
-
-  const getEventIcon = (type: AgentEvent["type"]) => {
-    switch (type) {
-      case "connected":
-        return <Sparkles className="h-4 w-4 text-blue-500" />;
-      case "thinking":
-        return <Brain className="h-4 w-4 text-purple-500 animate-pulse" />;
-      case "tool_call":
-        return <Wrench className="h-4 w-4 text-orange-500" />;
-      case "tool_result":
-        return <MessageSquare className="h-4 w-4 text-gray-500" />;
-      case "status":
-        return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
-      case "result":
-        return <Check className="h-4 w-4 text-green-500" />;
-      case "done":
-        return <Check className="h-4 w-4 text-green-500" />;
-      case "error":
-        return <AlertCircle className="h-4 w-4 text-red-500" />;
-      default:
-        return <Loader2 className="h-4 w-4 animate-spin" />;
-    }
-  };
-
-  const getEventStyle = (type: AgentEvent["type"]) => {
-    switch (type) {
-      case "error":
-        return "bg-red-50 border-red-200 text-red-800";
-      case "result":
-      case "done":
-        return "bg-green-50 border-green-200 text-green-800";
-      case "tool_call":
-        return "bg-orange-50 border-orange-200 text-orange-800";
-      case "tool_result":
-        return "bg-gray-50 border-gray-200 text-gray-600 text-sm";
-      default:
-        return "bg-white border-gray-200";
-    }
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-purple-500" />
-            AI Organizing File
-          </DialogTitle>
-          <DialogDescription>
-            {fileName
-              ? `Organizing "${fileName}"...`
-              : "AI is analyzing and organizing your file..."}
-          </DialogDescription>
-        </DialogHeader>
-
-        <ScrollArea className="h-[300px] pr-4" ref={scrollRef}>
-          <div className="space-y-2">
-            {events.length === 0 && !error && (
-              <div className="flex items-center justify-center py-8 text-muted-foreground">
-                <Loader2 className="h-6 w-6 animate-spin mr-2" />
-                Connecting to AI agent...
-              </div>
-            )}
-
-            {events.map((event, index) => (
-              <div
-                key={index}
-                className={cn(
-                  "flex items-start gap-2 p-2 rounded-md border",
-                  getEventStyle(event.type)
-                )}
-              >
-                <div className="mt-0.5">{getEventIcon(event.type)}</div>
-                <div className="flex-1 min-w-0">
-                  <p className="break-words">{event.message}</p>
-                  {event.tool && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Tool: {event.tool}
-                    </p>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {error && (
-              <div className="flex items-start gap-2 p-2 rounded-md border bg-red-50 border-red-200 text-red-800">
-                <AlertCircle className="h-4 w-4 mt-0.5" />
-                <p>{error}</p>
-              </div>
-            )}
-          </div>
-        </ScrollArea>
-
-        <div className="flex justify-end gap-2 pt-4 border-t">
-          {isComplete || error ? (
-            <Button onClick={handleClose}>
-              {isComplete ? "Done" : "Close"}
-            </Button>
-          ) : (
-            <Button variant="outline" onClick={handleClose}>
-              Cancel
-            </Button>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
+    eventSource.onerror = () => {
+      eventSource.close();
+      toast.error(<MarkdownContent content="Connection to AI agent lost" />, {
+        id: toastId,
+        description: fileName ? <Description content={fileName} /> : undefined,
+        icon: <AlertCircle className="h-4 w-4" />,
+        classNames: {
+          title: "text-foreground",
+          description: "text-foreground",
+        },
+      });
+    };
+  } catch (error) {
+    toast.error(<MarkdownContent content="Failed to start AI organization" />, {
+      id: toastId,
+      description: (
+        <Description content={error instanceof Error ? error.message : "Unknown error"} />
+      ),
+      icon: <AlertCircle className="h-4 w-4" />,
+      classNames: {
+        title: "text-foreground",
+        description: "text-foreground",
+      },
+    });
+  }
 }
