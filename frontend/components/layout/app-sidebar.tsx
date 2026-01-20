@@ -20,6 +20,7 @@ import {
 import { NavUser } from "./nav-user";
 import { FolderTree } from "@/components/folders/folder-tree";
 import { CreateFolderDialog } from "@/components/folders/create-folder-dialog";
+import { SidebarTagItem } from "@/components/tags/sidebar-tag-item";
 import type { FolderTree as FolderTreeType, Tag } from "@/lib/api/types";
 
 interface AppSidebarProps {
@@ -73,40 +74,28 @@ export function AppSidebar({
           <SidebarSeparator />
 
           {/* Tags filter section */}
-          <SidebarGroup>
+          <SidebarGroup className={tags.length === 0 ? "group-data-[collapsible=icon]:hidden" : ""}>
             <SidebarGroupLabel>Tags</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {tags.length > 0 ? (
                   tags.map((tag) => (
-                    <SidebarMenuItem key={tag.id}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={activeTagId === tag.id.toString()}
-                        tooltip={tag.name}
-                      >
-                        <Link href={`/files?tag_ids=${tag.id}`}>
-                          <span
-                            className="h-3 w-3 rounded-full shrink-0"
-                            style={{ backgroundColor: tag.color || "#6b7280" }}
-                          />
-                          <span className="truncate">{tag.name}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
+                    <SidebarTagItem
+                      key={tag.id}
+                      tag={tag}
+                      isActive={activeTagId === tag.id.toString()}
+                    />
                   ))
                 ) : (
-                  <SidebarMenuItem>
-                    <div className="px-3 py-2 text-sm text-muted-foreground">
-                      No tags yet
-                    </div>
-                  </SidebarMenuItem>
+                  <div className="px-3 py-2 text-sm text-muted-foreground">
+                    No tags yet
+                  </div>
                 )}
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
 
-          <SidebarSeparator />
+          <SidebarSeparator className={tags.length === 0 ? "group-data-[collapsible=icon]:hidden" : ""} />
 
           {/* Manage section */}
           <SidebarGroup>
