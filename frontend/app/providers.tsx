@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionProvider } from "next-auth/react";
 import { useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
+import { FileManagementProvider } from "@/lib/plugins/file-management-context";
+import { getBuiltinPlugins } from "@/lib/plugins/builtin";
 
 function makeQueryClient() {
   return new QueryClient({
@@ -31,11 +33,14 @@ function getQueryClient() {
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => getQueryClient());
+  const builtinPlugins = getBuiltinPlugins();
 
   return (
     <SessionProvider>
       <QueryClientProvider client={queryClient}>
-        {children}
+        <FileManagementProvider plugins={builtinPlugins}>
+          {children}
+        </FileManagementProvider>
         <Toaster position="top-right" />
       </QueryClientProvider>
     </SessionProvider>

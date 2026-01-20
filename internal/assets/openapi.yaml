@@ -1221,6 +1221,10 @@ components:
           type: string
         has_embedding:
           type: boolean
+        invoice_id:
+          type: integer
+          nullable: true
+          description: External invoice system ID (only set for invoice file types)
         created_at:
           type: string
           format: date-time

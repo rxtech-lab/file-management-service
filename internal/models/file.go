@@ -46,6 +46,7 @@ type File struct {
 	ProcessingStatus FileProcessingStatus `gorm:"type:varchar(20);default:'pending'" json:"processing_status"`
 	ProcessingError  string               `gorm:"type:text" json:"processing_error,omitempty"`
 	HasEmbedding     bool                 `gorm:"default:false" json:"has_embedding"`
+	InvoiceID        *int64               `gorm:"index" json:"invoice_id,omitempty"` // External invoice system ID
 	CreatedAt        time.Time            `json:"created_at"`
 	UpdatedAt        time.Time            `json:"updated_at"`
 	DeletedAt        gorm.DeletedAt       `gorm:"index" json:"-"`

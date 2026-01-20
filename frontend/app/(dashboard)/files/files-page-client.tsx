@@ -13,7 +13,7 @@ import { FolderBreadcrumb } from "@/components/folders/folder-breadcrumb";
 import { CreateFolderDialog } from "@/components/folders/create-folder-dialog";
 import { UploadQueue } from "@/components/upload/upload-queue";
 import { FileMetadataSheet } from "@/components/files/file-metadata-sheet";
-import { triggerAIOrganize } from "@/components/ai/ai-organize-dialog";
+import { triggerAIOrganize, triggerAIOrganizeFolder } from "@/components/ai/ai-organize-dialog";
 import { DndProvider } from "@/components/dnd/dnd-provider";
 import { DroppableFolder } from "@/components/dnd/droppable-folder";
 import { useViewMode } from "@/hooks/use-view-mode";
@@ -173,8 +173,10 @@ export function FilesPageClient({
   };
 
   const handleFolderAIOrganize = (folder: Folder) => {
-    // TODO: Implement folder AI organize (organize all files in folder)
-    toast.info("AI Organize for folders coming soon");
+    triggerAIOrganizeFolder(folder.id, folder.name, () => {
+      // Refresh the page when AI organization completes
+      router.refresh();
+    });
   };
 
   // Empty space action handlers

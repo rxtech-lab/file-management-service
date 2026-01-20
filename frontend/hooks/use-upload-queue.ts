@@ -5,10 +5,9 @@ import { useRouter } from "next/navigation";
 import { uploadFileAction } from "@/lib/actions/upload-actions";
 import {
   createFileAction,
-  processFileAction,
   getFileAction,
 } from "@/lib/actions/file-actions";
-import type { ProcessingStatus, AgentEvent } from "@/lib/api/types";
+import type { ProcessingStatus, ProcessingEvent } from "@/lib/api/types";
 
 export interface UploadQueueItem {
   id: string;
@@ -26,9 +25,10 @@ export interface UploadQueueItem {
   processingStatus?: ProcessingStatus;
   aiSummary?: string;
   error?: string;
-  // Agent status for real-time updates
-  agentStatus?: string;
-  agentStep?: AgentEvent["type"];
+  // Processing status for real-time updates
+  processingMessage?: string;
+  processingSource?: string;
+  processingStep?: ProcessingEvent["type"];
 }
 
 export function useUploadQueue(folderId: number | null) {
@@ -38,26 +38,27 @@ export function useUploadQueue(folderId: number | null) {
   const pollingIntervals = useRef<Map<string, NodeJS.Timeout>>(new Map());
   const agentEventSources = useRef<Map<string, EventSource>>(new Map());
 
-  // Subscribe to agent SSE for real-time status updates
-  const subscribeToAgentStream = useCallback(
+  // Subscribe to unified process-stream for real-time status updates
+  const subscribeToProcessStream = useCallback(
     (itemId: string, fileId: number) => {
       // Use Next.js API route to proxy the SSE stream with authentication
-      const eventSource = new EventSource(`/api/agent-stream/${fileId}`);
+      const eventSource = new EventSource(`/api/process-stream/${fileId}`);
 
       agentEventSources.current.set(itemId, eventSource);
 
       eventSource.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data) as AgentEvent;
+          const data = JSON.parse(event.data) as ProcessingEvent;
 
-          // Update agent status in the queue item
+          // Update processing status in the queue item
           setItems((prev) =>
             prev.map((item) =>
               item.id === itemId
                 ? {
                   ...item,
-                  agentStatus: data.message,
-                  agentStep: data.type,
+                  processingMessage: data.message,
+                  processingSource: data.source,
+                  processingStep: data.type,
                 }
                 : item
             )
@@ -67,6 +68,8 @@ export function useUploadQueue(folderId: number | null) {
           if (data.type === "done" || data.type === "error") {
             eventSource.close();
             agentEventSources.current.delete(itemId);
+            // Refresh file data after processing completes
+            router.refresh();
           }
         } catch {
           // Ignore parse errors
@@ -78,7 +81,7 @@ export function useUploadQueue(folderId: number | null) {
         agentEventSources.current.delete(itemId);
       };
     },
-    []
+    [router]
   );
 
   const updateItem = useCallback(
@@ -134,11 +137,8 @@ export function useUploadQueue(folderId: number | null) {
           processingStatus: "pending",
         });
 
-        // Step 3: Trigger processing
-        await processFileAction(fileId);
-
-        // Step 3.5: Subscribe to agent SSE for real-time status updates
-        subscribeToAgentStream(item.id, fileId);
+        // Step 3: Subscribe to unified process-stream (triggers processing AND streams events)
+        subscribeToProcessStream(item.id, fileId);
 
         // Step 4: Start polling for processing status
         const pollInterval = setInterval(async () => {
@@ -183,7 +183,7 @@ export function useUploadQueue(folderId: number | null) {
         });
       }
     },
-    [folderId, updateItem, router, subscribeToAgentStream],
+    [folderId, updateItem, router, subscribeToProcessStream],
   );
 
   const addFiles = useCallback(

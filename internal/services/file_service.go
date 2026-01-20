@@ -42,6 +42,7 @@ type FileService interface {
 	UpdateFileContent(userID string, fileID uint, content, summary string, fileType models.FileType) error
 	UpdateFileProcessingStatus(userID string, fileID uint, status models.FileProcessingStatus, errMsg string) error
 	SetFileHasEmbedding(userID string, fileID uint, hasEmbedding bool) error
+	UpdateFileInvoiceID(userID string, fileID uint, invoiceID int64) error
 
 	// Folder operations
 	GetFilesInFolderRecursive(userID string, folderID uint) ([]models.File, error)
@@ -379,6 +380,21 @@ func (s *fileService) SetFileHasEmbedding(userID string, fileID uint, hasEmbeddi
 	result := s.db.Model(&models.File{}).
 		Where("id = ? AND user_id = ?", fileID, userID).
 		Update("has_embedding", hasEmbedding)
+
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("file not found")
+	}
+	return nil
+}
+
+// UpdateFileInvoiceID updates the invoice_id for a file
+func (s *fileService) UpdateFileInvoiceID(userID string, fileID uint, invoiceID int64) error {
+	result := s.db.Model(&models.File{}).
+		Where("id = ? AND user_id = ?", fileID, userID).
+		Update("invoice_id", invoiceID)
 
 	if result.Error != nil {
 		return result.Error

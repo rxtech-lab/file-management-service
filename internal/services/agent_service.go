@@ -23,11 +23,12 @@ type AgentConfig struct {
 
 // AgentEvent represents a real-time status update from the agent
 type AgentEvent struct {
-	Type    string      `json:"type"`              // "status", "tool_call", "tool_result", "thinking", "result", "error"
-	Message string      `json:"message"`           // Human-readable status message
-	Data    interface{} `json:"data,omitempty"`    // Optional additional data
-	Tool    string      `json:"tool,omitempty"`    // Tool name if type is tool_call
-	FileID  uint        `json:"file_id,omitempty"` // File ID being processed
+	Type     string      `json:"type"`                // "status", "tool_call", "tool_result", "thinking", "result", "error"
+	Message  string      `json:"message"`             // Human-readable status message
+	Data     interface{} `json:"data,omitempty"`      // Optional additional data
+	Tool     string      `json:"tool,omitempty"`      // Tool name if type is tool_call
+	FileID   uint        `json:"file_id,omitempty"`   // File ID being processed
+	FolderID uint        `json:"folder_id,omitempty"` // Folder ID being processed
 }
 
 // AgentService handles AI-powered file organization
@@ -40,6 +41,10 @@ type AgentService interface {
 	// OrganizeFile lets user trigger AI to reorganize an existing file
 	OrganizeFile(ctx context.Context, userID string, fileID uint,
 		eventChan chan<- AgentEvent) error
+
+	// OrganizeFolder lets user trigger AI to organize all files in a folder
+	OrganizeFolder(ctx context.Context, userID string, folderID uint,
+		includeSubfolders bool, eventChan chan<- AgentEvent) error
 
 	// IsEnabled returns whether the agent is enabled
 	IsEnabled() bool
@@ -478,6 +483,881 @@ func (s *agentService) OrganizeFile(
 	return s.ProcessFileWithAgent(ctx, userID, fileID, file.Content, file.Summary, eventChan)
 }
 
+// OrganizeFolder lets user trigger AI to organize all files in a folder
+func (s *agentService) OrganizeFolder(
+	ctx context.Context,
+	userID string,
+	folderID uint,
+	includeSubfolders bool,
+	eventChan chan<- AgentEvent,
+) error {
+	if !s.IsEnabled() {
+		return fmt.Errorf("agent is not enabled")
+	}
+
+	// Get folder info
+	folder, err := s.folderService.GetFolderByID(userID, folderID)
+	if err != nil || folder == nil {
+		eventChan <- AgentEvent{Type: "error", Message: "Failed to get folder info", FolderID: folderID}
+		return fmt.Errorf("failed to get folder: %w", err)
+	}
+
+	// Get files in folder
+	var files []models.File
+	if includeSubfolders {
+		files, err = s.fileService.GetFilesInFolderRecursive(userID, folderID)
+	} else {
+		opts := FileListOptions{
+			FolderID: &folderID,
+			Limit:    100,
+		}
+		files, _, err = s.fileService.ListFiles(userID, opts)
+	}
+	if err != nil {
+		eventChan <- AgentEvent{Type: "error", Message: "Failed to get files in folder", FolderID: folderID}
+		return fmt.Errorf("failed to get files: %w", err)
+	}
+
+	// Get subfolders
+	subfolders, _, err := s.folderService.ListFolders(userID, FolderListOptions{
+		ParentID: &folderID,
+		Limit:    100,
+	})
+	if err != nil {
+		subfolders = []models.Folder{}
+	}
+
+	// Build user prompt
+	userPrompt := s.buildFolderUserPrompt(folder, files, subfolders)
+
+	// Initialize messages
+	messages := []agentMessage{
+		{Role: "system", Content: s.getFolderSystemPrompt()},
+		{Role: "user", Content: userPrompt},
+	}
+
+	eventChan <- AgentEvent{
+		Type:     "status",
+		Message:  fmt.Sprintf("AI agent started analyzing folder '%s' with %d files...", folder.Name, len(files)),
+		FolderID: folderID,
+	}
+
+	// Agent loop
+	for turn := 0; turn < s.config.MaxTurns; turn++ {
+		// Call LLM with folder tools
+		response, err := s.callFolderChatCompletions(ctx, messages)
+		if err != nil {
+			eventChan <- AgentEvent{Type: "error", Message: fmt.Sprintf("AI error: %v", err), FolderID: folderID}
+			return fmt.Errorf("chat completion failed: %w", err)
+		}
+
+		if len(response.Choices) == 0 {
+			eventChan <- AgentEvent{Type: "error", Message: "No response from AI", FolderID: folderID}
+			return fmt.Errorf("no response from AI")
+		}
+
+		choice := response.Choices[0]
+		assistantMsg := choice.Message
+
+		// Add assistant message to history
+		messages = append(messages, assistantMsg)
+
+		// Check if model wants to call tools
+		if choice.FinishReason == "tool_calls" && len(assistantMsg.ToolCalls) > 0 {
+			// Execute each tool call
+			for _, tc := range assistantMsg.ToolCalls {
+				eventChan <- AgentEvent{
+					Type:     "tool_call",
+					Message:  fmt.Sprintf("Executing: %s", formatFolderToolCallMessage(tc.Function.Name, tc.Function.Arguments)),
+					Tool:     tc.Function.Name,
+					FolderID: folderID,
+					Data:     tc,
+				}
+
+				// Execute tool
+				result, err := s.executeFolderTool(userID, folderID, tc)
+				if err != nil {
+					result = fmt.Sprintf("Error: %v", err)
+				}
+
+				eventChan <- AgentEvent{
+					Type:     "tool_result",
+					Message:  fmt.Sprintf("Result from %s", tc.Function.Name),
+					Tool:     tc.Function.Name,
+					FolderID: folderID,
+					Data:     result,
+				}
+
+				// Add tool result to messages
+				messages = append(messages, agentMessage{
+					Role:       "tool",
+					Content:    result,
+					ToolCallID: tc.ID,
+				})
+			}
+		} else if choice.FinishReason == "stop" {
+			// Agent finished
+			eventChan <- AgentEvent{
+				Type:     "result",
+				Message:  assistantMsg.Content,
+				FolderID: folderID,
+			}
+			return nil
+		} else {
+			// Unexpected finish reason, but might have content
+			if assistantMsg.Content != "" {
+				eventChan <- AgentEvent{
+					Type:     "result",
+					Message:  assistantMsg.Content,
+					FolderID: folderID,
+				}
+			}
+			return nil
+		}
+	}
+
+	eventChan <- AgentEvent{
+		Type:     "error",
+		Message:  "Agent reached maximum turns without completing",
+		FolderID: folderID,
+	}
+	return fmt.Errorf("max turns exceeded")
+}
+
+// getFolderSystemPrompt returns the system prompt for folder organization
+func (s *agentService) getFolderSystemPrompt() string {
+	return `You are a folder organization assistant. Your job is to analyze the contents of a folder and organize it by:
+
+1. **File Tagging**: For each file that lacks proper tags, search for existing tags and add relevant ones. Only create new tags if no suitable existing tags are found.
+
+2. **Subfolder Organization**: Analyze the files and determine if they should be organized into subfolders. You can:
+   - Move files to existing subfolders
+   - Create new subfolders for logical groupings
+   - Leave files in the current folder if appropriate
+
+3. **Folder Tagging**: Add relevant tags to the folder itself based on its overall content theme.
+
+4. **Folder Relocation**: If this folder itself is not in the correct location in the folder hierarchy, move it to a more appropriate parent folder. Check the folder tree to understand the overall structure and determine if this folder belongs elsewhere.
+
+Guidelines:
+- Process files efficiently - analyze patterns first before making changes
+- Look for patterns in file types, topics, and naming conventions
+- Be conservative with creating new subfolders - only create when there's a clear grouping
+- Always search for existing tags before creating new ones
+- Tag names should be lowercase with hyphens (e.g., "project-report", "meeting-notes")
+- Consider moving the folder itself if it would fit better under a different parent folder
+- Work efficiently - you have limited turns to complete the organization
+- Explain your reasoning briefly before taking actions`
+}
+
+// getFolderTools returns the tool definitions for folder organization
+func (s *agentService) getFolderTools() []toolDefinition {
+	return []toolDefinition{
+		{
+			Type: "function",
+			Function: functionSchema{
+				Name:        "list_files_in_folder",
+				Description: "List all files in the folder being organized. Use this to see what files need organization.",
+				Parameters: parametersSchema{
+					Type:       "object",
+					Properties: map[string]interface{}{},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: functionSchema{
+				Name:        "get_file_details",
+				Description: "Get detailed information about a specific file including its content summary and current tags.",
+				Parameters: parametersSchema{
+					Type: "object",
+					Properties: map[string]interface{}{
+						"file_id": map[string]interface{}{
+							"type":        "integer",
+							"description": "The ID of the file to get details for",
+						},
+					},
+					Required: []string{"file_id"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: functionSchema{
+				Name:        "search_tags",
+				Description: "Search for existing tags by keyword. Use this to find relevant tags before creating new ones.",
+				Parameters: parametersSchema{
+					Type: "object",
+					Properties: map[string]interface{}{
+						"keyword": map[string]interface{}{
+							"type":        "string",
+							"description": "Search keyword to find matching tags",
+						},
+					},
+					Required: []string{"keyword"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: functionSchema{
+				Name:        "list_all_tags",
+				Description: "List all existing tags for the user. Use this to see what tags are available.",
+				Parameters: parametersSchema{
+					Type:       "object",
+					Properties: map[string]interface{}{},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: functionSchema{
+				Name:        "create_tag",
+				Description: "Create a new tag. Only create tags if no suitable existing tag was found.",
+				Parameters: parametersSchema{
+					Type: "object",
+					Properties: map[string]interface{}{
+						"name": map[string]interface{}{
+							"type":        "string",
+							"description": "Tag name (lowercase, use hyphens for spaces, e.g., 'project-report')",
+						},
+						"color": map[string]interface{}{
+							"type":        "string",
+							"description": "Hex color code for the tag (e.g., '#FF5733')",
+						},
+						"description": map[string]interface{}{
+							"type":        "string",
+							"description": "Brief description of what this tag represents",
+						},
+					},
+					Required: []string{"name"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: functionSchema{
+				Name:        "add_tags_to_file",
+				Description: "Add one or more tags to a specific file.",
+				Parameters: parametersSchema{
+					Type: "object",
+					Properties: map[string]interface{}{
+						"file_id": map[string]interface{}{
+							"type":        "integer",
+							"description": "The ID of the file to add tags to",
+						},
+						"tag_ids": map[string]interface{}{
+							"type":        "array",
+							"items":       map[string]interface{}{"type": "integer"},
+							"description": "Array of tag IDs to add to the file",
+						},
+					},
+					Required: []string{"file_id", "tag_ids"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: functionSchema{
+				Name:        "move_file_to_subfolder",
+				Description: "Move a file to a subfolder within the current folder.",
+				Parameters: parametersSchema{
+					Type: "object",
+					Properties: map[string]interface{}{
+						"file_id": map[string]interface{}{
+							"type":        "integer",
+							"description": "The ID of the file to move",
+						},
+						"target_folder_id": map[string]interface{}{
+							"type":        "integer",
+							"description": "The ID of the target subfolder to move the file to",
+						},
+					},
+					Required: []string{"file_id", "target_folder_id"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: functionSchema{
+				Name:        "list_subfolders",
+				Description: "List all subfolders in the folder being organized.",
+				Parameters: parametersSchema{
+					Type:       "object",
+					Properties: map[string]interface{}{},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: functionSchema{
+				Name:        "create_subfolder",
+				Description: "Create a new subfolder in the folder being organized.",
+				Parameters: parametersSchema{
+					Type: "object",
+					Properties: map[string]interface{}{
+						"name": map[string]interface{}{
+							"type":        "string",
+							"description": "Name of the new subfolder",
+						},
+						"description": map[string]interface{}{
+							"type":        "string",
+							"description": "Brief description of what this subfolder is for",
+						},
+					},
+					Required: []string{"name"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: functionSchema{
+				Name:        "add_tags_to_folder",
+				Description: "Add tags to the folder being organized.",
+				Parameters: parametersSchema{
+					Type: "object",
+					Properties: map[string]interface{}{
+						"tag_ids": map[string]interface{}{
+							"type":        "array",
+							"items":       map[string]interface{}{"type": "integer"},
+							"description": "Array of tag IDs to add to the folder",
+						},
+					},
+					Required: []string{"tag_ids"},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: functionSchema{
+				Name:        "get_folder_info",
+				Description: "Get information about the folder being organized, including its current tags.",
+				Parameters: parametersSchema{
+					Type:       "object",
+					Properties: map[string]interface{}{},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: functionSchema{
+				Name:        "get_folder_tree",
+				Description: "Get the hierarchical folder structure. Use this to understand the overall organization and find the best location for the folder.",
+				Parameters: parametersSchema{
+					Type:       "object",
+					Properties: map[string]interface{}{},
+				},
+			},
+		},
+		{
+			Type: "function",
+			Function: functionSchema{
+				Name:        "move_current_folder",
+				Description: "Move the folder being organized to a different parent folder. Use this if the folder is not in the correct location in the hierarchy.",
+				Parameters: parametersSchema{
+					Type: "object",
+					Properties: map[string]interface{}{
+						"target_parent_id": map[string]interface{}{
+							"type":        "integer",
+							"description": "The ID of the new parent folder to move this folder under. Use null to move to root level.",
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
+// buildFolderUserPrompt builds the user prompt for folder organization
+func (s *agentService) buildFolderUserPrompt(folder *models.Folder, files []models.File, subfolders []models.Folder) string {
+	// Format files list
+	filesList := ""
+	for _, f := range files {
+		tags := "none"
+		if len(f.Tags) > 0 {
+			tagNames := make([]string, len(f.Tags))
+			for i, t := range f.Tags {
+				tagNames[i] = t.Name
+			}
+			tags = strings.Join(tagNames, ", ")
+		}
+		filesList += fmt.Sprintf("- ID: %d, Title: %s, Type: %s, Tags: %s\n", f.ID, f.Title, f.FileType, tags)
+	}
+	if filesList == "" {
+		filesList = "No files in this folder\n"
+	}
+
+	// Format subfolders list
+	subfoldersList := ""
+	for _, sf := range subfolders {
+		subfoldersList += fmt.Sprintf("- ID: %d, Name: %s", sf.ID, sf.Name)
+		if sf.Description != "" {
+			subfoldersList += fmt.Sprintf(" (%s)", sf.Description)
+		}
+		subfoldersList += "\n"
+	}
+	if subfoldersList == "" {
+		subfoldersList = "No subfolders\n"
+	}
+
+	// Format folder tags
+	folderTags := "none"
+	if len(folder.Tags) > 0 {
+		tagNames := make([]string, len(folder.Tags))
+		for i, t := range folder.Tags {
+			tagNames[i] = t.Name
+		}
+		folderTags = strings.Join(tagNames, ", ")
+	}
+
+	// Format parent folder info
+	parentInfo := "Root level (no parent)"
+	if folder.ParentID != nil {
+		parentInfo = fmt.Sprintf("Parent folder ID: %d", *folder.ParentID)
+	}
+
+	return fmt.Sprintf(`Please organize this folder:
+
+**Folder Information:**
+- ID: %d
+- Name: %s
+- Description: %s
+- Current Location: %s
+- Current Tags: %s
+
+**Files in folder (%d total):**
+%s
+**Existing subfolders:**
+%s
+Please:
+1. First, list all existing tags to see what's available
+2. Get the folder tree to understand the overall folder hierarchy
+3. Analyze the files and identify patterns or groupings
+4. Add appropriate tags to files that need them
+5. If files can be logically grouped, create subfolders and move them
+6. Add tags to the folder itself based on its content
+7. If this folder is not in the correct location, move it to a more appropriate parent folder
+
+Start by examining the files, existing tags, and folder structure.`,
+		folder.ID,
+		folder.Name,
+		folder.Description,
+		parentInfo,
+		folderTags,
+		len(files),
+		filesList,
+		subfoldersList,
+	)
+}
+
+// callFolderChatCompletions makes the API request with folder-specific tools
+func (s *agentService) callFolderChatCompletions(ctx context.Context, messages []agentMessage) (*agentChatResponse, error) {
+	reqBody := agentChatRequest{
+		Model:      s.config.Model,
+		Messages:   messages,
+		Tools:      s.getFolderTools(),
+		ToolChoice: "auto",
+	}
+
+	jsonBody, err := json.Marshal(reqBody)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	url := fmt.Sprintf("%s/chat/completions", strings.TrimSuffix(s.config.GatewayURL, "/"))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(jsonBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+s.config.APIKey)
+
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var chatResp agentChatResponse
+	if err := json.Unmarshal(body, &chatResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if chatResp.Error != nil {
+		return nil, fmt.Errorf("API error: %s", chatResp.Error.Message)
+	}
+
+	return &chatResp, nil
+}
+
+// executeFolderTool runs folder-specific tools
+func (s *agentService) executeFolderTool(userID string, folderID uint, tc toolCall) (string, error) {
+	var args map[string]interface{}
+	if tc.Function.Arguments != "" {
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
+			return "", fmt.Errorf("failed to parse tool arguments: %w", err)
+		}
+	}
+
+	switch tc.Function.Name {
+	case "list_files_in_folder":
+		return s.executeListFilesInFolder(userID, folderID)
+	case "get_file_details":
+		return s.executeGetFileDetails(userID, args)
+	case "search_tags":
+		return s.executeSearchTags(userID, args)
+	case "list_all_tags":
+		return s.executeListAllTags(userID)
+	case "create_tag":
+		return s.executeCreateTag(userID, args)
+	case "add_tags_to_file":
+		return s.executeAddTagsToFileByID(userID, args)
+	case "move_file_to_subfolder":
+		return s.executeMoveFileToSubfolder(userID, args)
+	case "list_subfolders":
+		return s.executeListSubfolders(userID, folderID)
+	case "create_subfolder":
+		return s.executeCreateSubfolder(userID, folderID, args)
+	case "add_tags_to_folder":
+		return s.executeAddTagsToFolderByID(userID, folderID, args)
+	case "get_folder_info":
+		return s.executeGetFolderInfo(userID, folderID)
+	case "get_folder_tree":
+		return s.executeGetFolderTree(userID)
+	case "move_current_folder":
+		return s.executeMoveCurrentFolder(userID, folderID, args)
+	default:
+		return "", fmt.Errorf("unknown tool: %s", tc.Function.Name)
+	}
+}
+
+// Folder-specific tool implementations
+
+func (s *agentService) executeListFilesInFolder(userID string, folderID uint) (string, error) {
+	opts := FileListOptions{
+		FolderID: &folderID,
+		Limit:    100,
+	}
+	files, _, err := s.fileService.ListFiles(userID, opts)
+	if err != nil {
+		return "", err
+	}
+
+	if len(files) == 0 {
+		return "No files in this folder.", nil
+	}
+
+	result := fmt.Sprintf("Files in folder (%d total):\n", len(files))
+	for _, f := range files {
+		tags := "none"
+		if len(f.Tags) > 0 {
+			tagNames := make([]string, len(f.Tags))
+			for i, t := range f.Tags {
+				tagNames[i] = t.Name
+			}
+			tags = strings.Join(tagNames, ", ")
+		}
+		result += fmt.Sprintf("- ID: %d, Title: %s, Type: %s, Tags: %s\n", f.ID, f.Title, f.FileType, tags)
+	}
+	return result, nil
+}
+
+func (s *agentService) executeGetFileDetails(userID string, args map[string]interface{}) (string, error) {
+	fileIDFloat, ok := args["file_id"].(float64)
+	if !ok {
+		return "", fmt.Errorf("file_id is required")
+	}
+	fileID := uint(fileIDFloat)
+
+	file, err := s.fileService.GetFileByID(userID, fileID)
+	if err != nil || file == nil {
+		return "", fmt.Errorf("failed to get file")
+	}
+
+	tags := "none"
+	if len(file.Tags) > 0 {
+		tagNames := make([]string, len(file.Tags))
+		for i, t := range file.Tags {
+			tagNames[i] = fmt.Sprintf("%s (ID: %d)", t.Name, t.ID)
+		}
+		tags = strings.Join(tagNames, ", ")
+	}
+
+	summary := file.Summary
+	if summary == "" {
+		summary = "(no summary)"
+	}
+	if len(summary) > 500 {
+		summary = summary[:500] + "..."
+	}
+
+	return fmt.Sprintf(`File Details:
+- ID: %d
+- Title: %s
+- Type: %s
+- Tags: %s
+- Summary: %s`,
+		file.ID, file.Title, file.FileType, tags, summary), nil
+}
+
+func (s *agentService) executeAddTagsToFileByID(userID string, args map[string]interface{}) (string, error) {
+	fileIDFloat, ok := args["file_id"].(float64)
+	if !ok {
+		return "", fmt.Errorf("file_id is required")
+	}
+	fileID := uint(fileIDFloat)
+
+	tagIDsRaw, ok := args["tag_ids"].([]interface{})
+	if !ok || len(tagIDsRaw) == 0 {
+		return "", fmt.Errorf("tag_ids is required and must be a non-empty array")
+	}
+
+	tagIDs := make([]uint, 0, len(tagIDsRaw))
+	for _, id := range tagIDsRaw {
+		switch v := id.(type) {
+		case float64:
+			tagIDs = append(tagIDs, uint(v))
+		case int:
+			tagIDs = append(tagIDs, uint(v))
+		}
+	}
+
+	if len(tagIDs) == 0 {
+		return "", fmt.Errorf("no valid tag IDs provided")
+	}
+
+	if err := s.fileService.AddTagsToFile(userID, fileID, tagIDs); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("Successfully added %d tag(s) to file ID %d", len(tagIDs), fileID), nil
+}
+
+func (s *agentService) executeMoveFileToSubfolder(userID string, args map[string]interface{}) (string, error) {
+	fileIDFloat, ok := args["file_id"].(float64)
+	if !ok {
+		return "", fmt.Errorf("file_id is required")
+	}
+	fileID := uint(fileIDFloat)
+
+	targetFolderIDFloat, ok := args["target_folder_id"].(float64)
+	if !ok {
+		return "", fmt.Errorf("target_folder_id is required")
+	}
+	targetFolderID := uint(targetFolderIDFloat)
+
+	if err := s.fileService.MoveFiles(userID, []uint{fileID}, &targetFolderID); err != nil {
+		return "", err
+	}
+
+	// Get folder name for better feedback
+	folder, _ := s.folderService.GetFolderByID(userID, targetFolderID)
+	if folder != nil {
+		return fmt.Sprintf("Moved file ID %d to subfolder '%s'", fileID, folder.Name), nil
+	}
+	return fmt.Sprintf("Moved file ID %d to folder ID %d", fileID, targetFolderID), nil
+}
+
+func (s *agentService) executeListSubfolders(userID string, folderID uint) (string, error) {
+	subfolders, _, err := s.folderService.ListFolders(userID, FolderListOptions{
+		ParentID: &folderID,
+		Limit:    100,
+	})
+	if err != nil {
+		return "", err
+	}
+
+	if len(subfolders) == 0 {
+		return "No subfolders in this folder.", nil
+	}
+
+	result := fmt.Sprintf("Subfolders (%d total):\n", len(subfolders))
+	for _, sf := range subfolders {
+		result += fmt.Sprintf("- ID: %d, Name: %s", sf.ID, sf.Name)
+		if sf.Description != "" {
+			result += fmt.Sprintf(" (%s)", sf.Description)
+		}
+		result += "\n"
+	}
+	return result, nil
+}
+
+func (s *agentService) executeCreateSubfolder(userID string, parentFolderID uint, args map[string]interface{}) (string, error) {
+	name, ok := args["name"].(string)
+	if !ok || name == "" {
+		return "", fmt.Errorf("name is required")
+	}
+
+	folder := &models.Folder{
+		Name:        name,
+		Description: getStringArg(args, "description", ""),
+		ParentID:    &parentFolderID,
+	}
+
+	if err := s.folderService.CreateFolder(userID, folder); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("Created subfolder: ID=%d, Name='%s'", folder.ID, folder.Name), nil
+}
+
+func (s *agentService) executeAddTagsToFolderByID(userID string, folderID uint, args map[string]interface{}) (string, error) {
+	tagIDsRaw, ok := args["tag_ids"].([]interface{})
+	if !ok || len(tagIDsRaw) == 0 {
+		return "", fmt.Errorf("tag_ids is required and must be a non-empty array")
+	}
+
+	tagIDs := make([]uint, 0, len(tagIDsRaw))
+	for _, id := range tagIDsRaw {
+		switch v := id.(type) {
+		case float64:
+			tagIDs = append(tagIDs, uint(v))
+		case int:
+			tagIDs = append(tagIDs, uint(v))
+		}
+	}
+
+	if len(tagIDs) == 0 {
+		return "", fmt.Errorf("no valid tag IDs provided")
+	}
+
+	if err := s.folderService.AddTagsToFolder(userID, folderID, tagIDs); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("Successfully added %d tag(s) to the folder", len(tagIDs)), nil
+}
+
+func (s *agentService) executeGetFolderInfo(userID string, folderID uint) (string, error) {
+	folder, err := s.folderService.GetFolderByID(userID, folderID)
+	if err != nil || folder == nil {
+		return "", fmt.Errorf("failed to get folder")
+	}
+
+	tags := "none"
+	if len(folder.Tags) > 0 {
+		tagNames := make([]string, len(folder.Tags))
+		for i, t := range folder.Tags {
+			tagNames[i] = fmt.Sprintf("%s (ID: %d)", t.Name, t.ID)
+		}
+		tags = strings.Join(tagNames, ", ")
+	}
+
+	parentInfo := "Root (no parent)"
+	if folder.ParentID != nil {
+		parentFolder, _ := s.folderService.GetFolderByID(userID, *folder.ParentID)
+		if parentFolder != nil {
+			parentInfo = fmt.Sprintf("%s (ID: %d)", parentFolder.Name, parentFolder.ID)
+		} else {
+			parentInfo = fmt.Sprintf("ID: %d", *folder.ParentID)
+		}
+	}
+
+	return fmt.Sprintf(`Folder Information:
+- ID: %d
+- Name: %s
+- Description: %s
+- Parent: %s
+- Tags: %s`,
+		folder.ID, folder.Name, folder.Description, parentInfo, tags), nil
+}
+
+func (s *agentService) executeMoveCurrentFolder(userID string, folderID uint, args map[string]interface{}) (string, error) {
+	var targetParentID *uint
+	if parentID, ok := args["target_parent_id"].(float64); ok {
+		pid := uint(parentID)
+		targetParentID = &pid
+	}
+
+	// Prevent moving folder into itself or its descendants
+	if targetParentID != nil && *targetParentID == folderID {
+		return "", fmt.Errorf("cannot move folder into itself")
+	}
+
+	if err := s.folderService.MoveFolder(userID, folderID, targetParentID); err != nil {
+		return "", err
+	}
+
+	if targetParentID == nil {
+		return "Moved folder to root level", nil
+	}
+
+	// Get parent folder name for better feedback
+	parentFolder, _ := s.folderService.GetFolderByID(userID, *targetParentID)
+	if parentFolder != nil {
+		return fmt.Sprintf("Moved folder to be under '%s'", parentFolder.Name), nil
+	}
+	return fmt.Sprintf("Moved folder to be under folder ID %d", *targetParentID), nil
+}
+
+// formatFolderToolCallMessage formats tool call messages for folder organization
+func formatFolderToolCallMessage(toolName, args string) string {
+	var a map[string]interface{}
+	json.Unmarshal([]byte(args), &a)
+
+	switch toolName {
+	case "list_files_in_folder":
+		return "Listing files in folder"
+	case "get_file_details":
+		if fileID, ok := a["file_id"].(float64); ok {
+			return fmt.Sprintf("Getting details for file ID %d", int(fileID))
+		}
+		return "Getting file details"
+	case "search_tags":
+		if keyword, ok := a["keyword"].(string); ok {
+			return fmt.Sprintf("Searching tags for '%s'", keyword)
+		}
+		return "Searching tags"
+	case "list_all_tags":
+		return "Listing all tags"
+	case "create_tag":
+		if name, ok := a["name"].(string); ok {
+			return fmt.Sprintf("Creating tag '%s'", name)
+		}
+		return "Creating new tag"
+	case "add_tags_to_file":
+		if fileID, ok := a["file_id"].(float64); ok {
+			return fmt.Sprintf("Adding tags to file ID %d", int(fileID))
+		}
+		return "Adding tags to file"
+	case "move_file_to_subfolder":
+		if fileID, ok := a["file_id"].(float64); ok {
+			return fmt.Sprintf("Moving file ID %d to subfolder", int(fileID))
+		}
+		return "Moving file to subfolder"
+	case "list_subfolders":
+		return "Listing subfolders"
+	case "create_subfolder":
+		if name, ok := a["name"].(string); ok {
+			return fmt.Sprintf("Creating subfolder '%s'", name)
+		}
+		return "Creating subfolder"
+	case "add_tags_to_folder":
+		return "Adding tags to folder"
+	case "get_folder_info":
+		return "Getting folder information"
+	case "get_folder_tree":
+		return "Getting folder hierarchy"
+	case "move_current_folder":
+		if parentID, ok := a["target_parent_id"].(float64); ok {
+			return fmt.Sprintf("Moving folder to parent folder ID %d", int(parentID))
+		}
+		return "Moving folder to root level"
+	default:
+		return toolName
+	}
+}
+
 // callChatCompletions makes the API request to the AI gateway
 func (s *agentService) callChatCompletions(ctx context.Context, messages []agentMessage) (*agentChatResponse, error) {
 	reqBody := agentChatRequest{
@@ -881,6 +1761,13 @@ func (m *MockAgentService) ProcessFileWithAgent(ctx context.Context, userID stri
 func (m *MockAgentService) OrganizeFile(ctx context.Context, userID string, fileID uint,
 	eventChan chan<- AgentEvent) error {
 	return m.ProcessFileWithAgent(ctx, userID, fileID, "", "", eventChan)
+}
+
+func (m *MockAgentService) OrganizeFolder(ctx context.Context, userID string, folderID uint,
+	includeSubfolders bool, eventChan chan<- AgentEvent) error {
+	eventChan <- AgentEvent{Type: "status", Message: "Mock agent processing folder...", FolderID: folderID}
+	eventChan <- AgentEvent{Type: "result", Message: "Mock folder organization complete", FolderID: folderID}
+	return nil
 }
 
 func (m *MockAgentService) IsEnabled() bool {

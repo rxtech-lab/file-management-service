@@ -15,6 +15,9 @@ type AuthenticatedUser struct {
 // This is separate from the Fiber middleware context key to avoid confusion
 const MCPAuthenticatedUserContextKey = "mcp_authenticated_user"
 
+// RawAuthTokenContextKey is the context key for storing the raw auth token
+const RawAuthTokenContextKey = "raw_auth_token"
+
 // WithAuthenticatedUser stores an authenticated user in the context
 func WithAuthenticatedUser(ctx context.Context, user *AuthenticatedUser) context.Context {
 	return context.WithValue(ctx, MCPAuthenticatedUserContextKey, user)
@@ -90,4 +93,16 @@ func HasScope(ctx context.Context, scope string) bool {
 		}
 	}
 	return false
+}
+
+// WithRawAuthToken stores the raw auth token in the context
+func WithRawAuthToken(ctx context.Context, token string) context.Context {
+	return context.WithValue(ctx, RawAuthTokenContextKey, token)
+}
+
+// GetRawAuthToken retrieves the raw auth token from context
+// Returns the token and a boolean indicating if the token was found
+func GetRawAuthToken(ctx context.Context) (string, bool) {
+	token, ok := ctx.Value(RawAuthTokenContextKey).(string)
+	return token, ok
 }
