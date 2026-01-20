@@ -217,13 +217,18 @@ export function SearchAgent({
             })}
           </AnimatePresence>
 
-          {/* Loading indicator - only show when no assistant content yet */}
+          {/* Loading indicator - show when processing and last assistant message has no content yet */}
           <AnimatePresence>
-            {isProcessing && !messages.some(
-              (m) => m.role === "assistant" && m.parts.some(
-                (p) => p.type === "text" || p.type.startsWith("tool-")
-              )
-            ) && (
+            {isProcessing && (() => {
+              // Find the last assistant message
+              const lastAssistantMessage = [...messages].reverse().find(m => m.role === "assistant");
+              // Show loading if no assistant message yet, or the last one has no content
+              if (!lastAssistantMessage) return true;
+              const hasContent = lastAssistantMessage.parts.some(
+                (p) => (p.type === "text" && (p as { type: "text"; text: string }).text.trim()) || p.type.startsWith("tool-")
+              );
+              return !hasContent;
+            })() && (
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
