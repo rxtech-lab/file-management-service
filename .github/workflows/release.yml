@@ -39,7 +39,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/invoice-management
+          images: ghcr.io/${{ github.repository_owner }}/files-management
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -104,12 +104,12 @@ jobs:
           kubectl kustomize . | kubectl apply -f -
 
           # Update the deployment with the specific release tag
-          kubectl set image deployment/invoice-management invoice-management=ghcr.io/rxtech-lab/invoice-management:${VERSION} -n invoice-management
+          kubectl set image deployment/files-management files-management=ghcr.io/rxtech-lab/files-management:${VERSION} -n files-management
 
           # Wait for rollout to complete
-          kubectl rollout status deployment/invoice-management -n invoice-management --timeout=300s
+          kubectl rollout status deployment/files-management -n files-management --timeout=300s
 
       - name: Verify deployment
         run: |
-          kubectl get pods -n invoice-management -l app=invoice-management
-          kubectl get service -n invoice-management invoice-management-service
+          kubectl get pods -n files-management -l app=files-management
+          kubectl get service -n files-management files-management-service
