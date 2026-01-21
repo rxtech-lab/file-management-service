@@ -536,6 +536,29 @@ func (h *StrictHandlers) RemoveTagsFromFile(
 	return generated.RemoveTagsFromFile200JSONResponse(fileModelToGenerated(updated)), nil
 }
 
+// UnlinkFileInvoice implements generated.StrictServerInterface
+func (h *StrictHandlers) UnlinkFileInvoice(
+	ctx context.Context,
+	request generated.UnlinkFileInvoiceRequestObject,
+) (generated.UnlinkFileInvoiceResponseObject, error) {
+	userID, err := getUserID(ctx)
+	if err != nil {
+		return generated.UnlinkFileInvoice401JSONResponse{UnauthorizedJSONResponse: unauthorized()}, nil
+	}
+
+	// Validate invoice_id parameter
+	if request.Params.InvoiceId <= 0 {
+		return generated.UnlinkFileInvoice400JSONResponse{BadRequestJSONResponse: badRequest("invoice_id must be a positive integer")}, nil
+	}
+
+	// Unlink the invoice from the file (verifies user ownership)
+	if err := h.fileService.UnlinkFileInvoiceByInvoiceID(userID, request.Params.InvoiceId); err != nil {
+		return generated.UnlinkFileInvoice404JSONResponse{NotFoundJSONResponse: notFound(err.Error())}, nil
+	}
+
+	return generated.UnlinkFileInvoice204Response{}, nil
+}
+
 // BatchDownloadFiles implements generated.StrictServerInterface
 // This handler streams a ZIP file containing multiple files
 func (h *StrictHandlers) BatchDownloadFiles(

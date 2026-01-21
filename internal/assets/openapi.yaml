@@ -702,6 +702,31 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  /api/files/invoice:
+    delete:
+      tags:
+        - Files
+      summary: Unlink invoice from file
+      description: Removes the invoice_id association from a file by invoice_id. Verifies the file belongs to the authenticated user.
+      operationId: unlinkFileInvoice
+      parameters:
+        - name: invoice_id
+          in: query
+          required: true
+          description: The invoice ID to unlink
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '204':
+          description: Invoice unlinked successfully
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
   /api/files/{id}/organize:
     post:
       tags:

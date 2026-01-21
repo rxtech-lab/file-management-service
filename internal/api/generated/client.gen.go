@@ -105,6 +105,9 @@ type ClientInterface interface {
 
 	BatchDownloadFiles(ctx context.Context, body BatchDownloadFilesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// UnlinkFileInvoice request
+	UnlinkFileInvoice(ctx context.Context, params *UnlinkFileInvoiceParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// MoveFilesWithBody request with any body
 	MoveFilesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -274,6 +277,18 @@ func (c *Client) BatchDownloadFilesWithBody(ctx context.Context, contentType str
 
 func (c *Client) BatchDownloadFiles(ctx context.Context, body BatchDownloadFilesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewBatchDownloadFilesRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UnlinkFileInvoice(ctx context.Context, params *UnlinkFileInvoiceParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUnlinkFileInvoiceRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1048,6 +1063,51 @@ func NewBatchDownloadFilesRequestWithBody(server string, contentType string, bod
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewUnlinkFileInvoiceRequest generates requests for UnlinkFileInvoice
+func NewUnlinkFileInvoiceRequest(server string, params *UnlinkFileInvoiceParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/files/invoice")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "invoice_id", runtime.ParamLocationQuery, params.InvoiceId); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -2448,6 +2508,9 @@ type ClientWithResponsesInterface interface {
 
 	BatchDownloadFilesWithResponse(ctx context.Context, body BatchDownloadFilesJSONRequestBody, reqEditors ...RequestEditorFn) (*BatchDownloadFilesResponse, error)
 
+	// UnlinkFileInvoiceWithResponse request
+	UnlinkFileInvoiceWithResponse(ctx context.Context, params *UnlinkFileInvoiceParams, reqEditors ...RequestEditorFn) (*UnlinkFileInvoiceResponse, error)
+
 	// MoveFilesWithBodyWithResponse request with any body
 	MoveFilesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MoveFilesResponse, error)
 
@@ -2641,6 +2704,30 @@ func (r BatchDownloadFilesResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r BatchDownloadFilesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UnlinkFileInvoiceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *BadRequest
+	JSON401      *Unauthorized
+	JSON404      *NotFound
+}
+
+// Status returns HTTPResponse.Status
+func (r UnlinkFileInvoiceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UnlinkFileInvoiceResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -3372,6 +3459,15 @@ func (c *ClientWithResponses) BatchDownloadFilesWithResponse(ctx context.Context
 	return ParseBatchDownloadFilesResponse(rsp)
 }
 
+// UnlinkFileInvoiceWithResponse request returning *UnlinkFileInvoiceResponse
+func (c *ClientWithResponses) UnlinkFileInvoiceWithResponse(ctx context.Context, params *UnlinkFileInvoiceParams, reqEditors ...RequestEditorFn) (*UnlinkFileInvoiceResponse, error) {
+	rsp, err := c.UnlinkFileInvoice(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUnlinkFileInvoiceResponse(rsp)
+}
+
 // MoveFilesWithBodyWithResponse request with arbitrary body returning *MoveFilesResponse
 func (c *ClientWithResponses) MoveFilesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MoveFilesResponse, error) {
 	rsp, err := c.MoveFilesWithBody(ctx, contentType, body, reqEditors...)
@@ -3838,6 +3934,46 @@ func ParseBatchDownloadFilesResponse(rsp *http.Response) (*BatchDownloadFilesRes
 			return nil, err
 		}
 		response.JSON401 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUnlinkFileInvoiceResponse parses an HTTP response from a UnlinkFileInvoiceWithResponse call
+func ParseUnlinkFileInvoiceResponse(rsp *http.Response) (*UnlinkFileInvoiceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UnlinkFileInvoiceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	}
 
