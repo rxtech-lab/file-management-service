@@ -339,6 +339,142 @@ func (s *FileTestSuite) TestProcessFile() {
 	s.Equal("processing", result["status"])
 }
 
+func (s *FileTestSuite) TestUnlinkFileInvoice() {
+	// Create a file with invoice_id set
+	fileID, err := s.setup.CreateTestFile("Invoice Document", "files/test-user-123/invoice.pdf", "invoice.pdf", nil)
+	s.Require().NoError(err)
+
+	// Manually set invoice_id using the database
+	db := s.setup.DBService.GetDB()
+	invoiceID := int64(12345)
+	err = db.Exec("UPDATE files SET invoice_id = ? WHERE id = ?", invoiceID, fileID).Error
+	s.Require().NoError(err)
+
+	// Verify invoice_id is set
+	resp, err := s.setup.MakeRequest("GET", fmt.Sprintf("/api/files/%d", fileID), nil)
+	s.Require().NoError(err)
+	s.Equal(http.StatusOK, resp.StatusCode)
+	result, err := s.setup.ReadResponseBody(resp)
+	s.Require().NoError(err)
+	s.Equal(float64(invoiceID), result["invoice_id"])
+
+	// Unlink the invoice using invoice_id query parameter
+	resp, err = s.setup.MakeRequest("DELETE", fmt.Sprintf("/api/files/invoice?invoice_id=%d", invoiceID), nil)
+	s.Require().NoError(err)
+	s.Equal(http.StatusNoContent, resp.StatusCode)
+
+	// Verify invoice_id is now NULL
+	resp, err = s.setup.MakeRequest("GET", fmt.Sprintf("/api/files/%d", fileID), nil)
+	s.Require().NoError(err)
+	s.Equal(http.StatusOK, resp.StatusCode)
+	result, err = s.setup.ReadResponseBody(resp)
+	s.Require().NoError(err)
+	s.Nil(result["invoice_id"])
+}
+
+func (s *FileTestSuite) TestUnlinkFileInvoiceNotFound() {
+	// Try to unlink invoice with non-existent invoice_id
+	resp, err := s.setup.MakeRequest("DELETE", "/api/files/invoice?invoice_id=99999", nil)
+	s.Require().NoError(err)
+	s.Equal(http.StatusNotFound, resp.StatusCode)
+}
+
+func (s *FileTestSuite) TestUnlinkFileInvoiceUnauthorized() {
+	// Create a file with a different user ID and set invoice_id
+	fileID, err := s.setup.CreateTestFile("Other User File", "files/other-user/doc.pdf", "doc.pdf", nil)
+	s.Require().NoError(err)
+
+	// Manually set the file to belong to a different user and set invoice_id
+	db := s.setup.DBService.GetDB()
+	invoiceID := int64(54321)
+	err = db.Exec("UPDATE files SET user_id = ?, invoice_id = ? WHERE id = ?", "other-user-456", invoiceID, fileID).Error
+	s.Require().NoError(err)
+
+	// Try to unlink invoice as test user (should fail due to user isolation)
+	resp, err := s.setup.MakeRequest("DELETE", fmt.Sprintf("/api/files/invoice?invoice_id=%d", invoiceID), nil)
+	s.Require().NoError(err)
+	// Should return 404 because the file with this invoice_id doesn't belong to this user
+	s.Equal(http.StatusNotFound, resp.StatusCode)
+}
+
+func (s *FileTestSuite) TestUnlinkFileInvoiceInvalidParam() {
+	// Try to unlink with invalid invoice_id (0)
+	resp, err := s.setup.MakeRequest("DELETE", "/api/files/invoice?invoice_id=0", nil)
+	s.Require().NoError(err)
+	s.Equal(http.StatusBadRequest, resp.StatusCode)
+
+	// Try to unlink with negative invoice_id
+	resp, err = s.setup.MakeRequest("DELETE", "/api/files/invoice?invoice_id=-1", nil)
+	s.Require().NoError(err)
+	s.Equal(http.StatusBadRequest, resp.StatusCode)
+}
+
+func (s *FileTestSuite) TestUnlinkFileInvoiceDifferentUsersSameInvoiceID() {
+	// This test verifies that when two different users have files with the same invoice_id,
+	// each user can only unlink their own file's invoice
+
+	db := s.setup.DBService.GetDB()
+	sameInvoiceID := int64(99999)
+
+	// User 1 (test-user-123) creates a file with invoice_id
+	file1ID, err := s.setup.CreateTestFile("User1 Invoice", "files/test-user-123/invoice1.pdf", "invoice1.pdf", nil)
+	s.Require().NoError(err)
+	err = db.Exec("UPDATE files SET invoice_id = ? WHERE id = ?", sameInvoiceID, file1ID).Error
+	s.Require().NoError(err)
+
+	// User 2 (other-user-456) creates a file with the SAME invoice_id
+	file2ID, err := s.setup.CreateTestFile("User2 Invoice", "files/other-user-456/invoice2.pdf", "invoice2.pdf", nil)
+	s.Require().NoError(err)
+	err = db.Exec("UPDATE files SET user_id = ?, invoice_id = ? WHERE id = ?", "other-user-456", sameInvoiceID, file2ID).Error
+	s.Require().NoError(err)
+
+	// Verify both files have the same invoice_id but different users
+	var file1Count, file2Count int64
+	db.Model(&struct {
+		ID        uint
+		UserID    string
+		InvoiceID *int64
+	}{}).Table("files").Where("id = ? AND user_id = ? AND invoice_id = ?", file1ID, "test-user-123", sameInvoiceID).Count(&file1Count)
+	s.Equal(int64(1), file1Count)
+	db.Model(&struct {
+		ID        uint
+		UserID    string
+		InvoiceID *int64
+	}{}).Table("files").Where("id = ? AND user_id = ? AND invoice_id = ?", file2ID, "other-user-456", sameInvoiceID).Count(&file2Count)
+	s.Equal(int64(1), file2Count)
+
+	// User 1 (test-user-123) tries to unlink - should succeed for their file
+	resp, err := s.setup.MakeRequest("DELETE", fmt.Sprintf("/api/files/invoice?invoice_id=%d", sameInvoiceID), nil)
+	s.Require().NoError(err)
+	s.Equal(http.StatusNoContent, resp.StatusCode)
+
+	// Verify User 1's file has invoice_id unlinked
+	resp, err = s.setup.MakeRequest("GET", fmt.Sprintf("/api/files/%d", file1ID), nil)
+	s.Require().NoError(err)
+	s.Equal(http.StatusOK, resp.StatusCode)
+	result, err := s.setup.ReadResponseBody(resp)
+	s.Require().NoError(err)
+	s.Nil(result["invoice_id"])
+
+	// Verify User 2's file STILL has invoice_id (not affected by User 1's unlink)
+	var file2InvoiceID *int64
+	err = db.Raw("SELECT invoice_id FROM files WHERE id = ? AND user_id = ?", file2ID, "other-user-456").Scan(&file2InvoiceID).Error
+	s.Require().NoError(err)
+	s.NotNil(file2InvoiceID)
+	s.Equal(sameInvoiceID, *file2InvoiceID)
+
+	// User 1 tries to unlink again - should fail (404) because their file no longer has this invoice_id
+	resp, err = s.setup.MakeRequest("DELETE", fmt.Sprintf("/api/files/invoice?invoice_id=%d", sameInvoiceID), nil)
+	s.Require().NoError(err)
+	s.Equal(http.StatusNotFound, resp.StatusCode)
+
+	// Verify User 2's file STILL has the invoice_id intact
+	err = db.Raw("SELECT invoice_id FROM files WHERE id = ? AND user_id = ?", file2ID, "other-user-456").Scan(&file2InvoiceID).Error
+	s.Require().NoError(err)
+	s.NotNil(file2InvoiceID)
+	s.Equal(sameInvoiceID, *file2InvoiceID)
+}
+
 func TestFileSuite(t *testing.T) {
 	suite.Run(t, new(FileTestSuite))
 }

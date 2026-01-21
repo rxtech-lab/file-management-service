@@ -29,6 +29,9 @@ type ServerInterface interface {
 	// Batch download files as ZIP
 	// (POST /api/files/batch-download)
 	BatchDownloadFiles(c *fiber.Ctx) error
+	// Unlink invoice from file
+	// (DELETE /api/files/invoice)
+	UnlinkFileInvoice(c *fiber.Ctx, params UnlinkFileInvoiceParams) error
 	// Move files
 	// (POST /api/files/move)
 	MoveFiles(c *fiber.Ctx) error
@@ -233,6 +236,40 @@ func (siw *ServerInterfaceWrapper) BatchDownloadFiles(c *fiber.Ctx) error {
 	c.Context().SetUserValue(BearerAuthScopes, []string{})
 
 	return siw.Handler.BatchDownloadFiles(c)
+}
+
+// UnlinkFileInvoice operation middleware
+func (siw *ServerInterfaceWrapper) UnlinkFileInvoice(c *fiber.Ctx) error {
+
+	var err error
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UnlinkFileInvoiceParams
+
+	var query url.Values
+	query, err = url.ParseQuery(string(c.Request().URI().QueryString()))
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for query string: %w", err).Error())
+	}
+
+	// ------------- Required query parameter "invoice_id" -------------
+
+	if paramValue := c.Query("invoice_id"); paramValue != "" {
+
+	} else {
+		err = fmt.Errorf("Query argument invoice_id is required, but not found")
+		c.Status(fiber.StatusBadRequest).JSON(err)
+		return err
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "invoice_id", query, &params.InvoiceId)
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter invoice_id: %w", err).Error())
+	}
+
+	return siw.Handler.UnlinkFileInvoice(c, params)
 }
 
 // MoveFiles operation middleware
@@ -863,6 +900,8 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 
 	router.Post(options.BaseURL+"/api/files/batch-download", wrapper.BatchDownloadFiles)
 
+	router.Delete(options.BaseURL+"/api/files/invoice", wrapper.UnlinkFileInvoice)
+
 	router.Post(options.BaseURL+"/api/files/move", wrapper.MoveFiles)
 
 	router.Delete(options.BaseURL+"/api/files/:id", wrapper.DeleteFile)
@@ -1045,6 +1084,49 @@ type BatchDownloadFiles401JSONResponse struct{ UnauthorizedJSONResponse }
 func (response BatchDownloadFiles401JSONResponse) VisitBatchDownloadFilesResponse(ctx *fiber.Ctx) error {
 	ctx.Response().Header.Set("Content-Type", "application/json")
 	ctx.Status(401)
+
+	return ctx.JSON(&response)
+}
+
+type UnlinkFileInvoiceRequestObject struct {
+	Params UnlinkFileInvoiceParams
+}
+
+type UnlinkFileInvoiceResponseObject interface {
+	VisitUnlinkFileInvoiceResponse(ctx *fiber.Ctx) error
+}
+
+type UnlinkFileInvoice204Response struct {
+}
+
+func (response UnlinkFileInvoice204Response) VisitUnlinkFileInvoiceResponse(ctx *fiber.Ctx) error {
+	ctx.Status(204)
+	return nil
+}
+
+type UnlinkFileInvoice400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UnlinkFileInvoice400JSONResponse) VisitUnlinkFileInvoiceResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(400)
+
+	return ctx.JSON(&response)
+}
+
+type UnlinkFileInvoice401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UnlinkFileInvoice401JSONResponse) VisitUnlinkFileInvoiceResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(401)
+
+	return ctx.JSON(&response)
+}
+
+type UnlinkFileInvoice404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UnlinkFileInvoice404JSONResponse) VisitUnlinkFileInvoiceResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(404)
 
 	return ctx.JSON(&response)
 }
@@ -2038,6 +2120,9 @@ type StrictServerInterface interface {
 	// Batch download files as ZIP
 	// (POST /api/files/batch-download)
 	BatchDownloadFiles(ctx context.Context, request BatchDownloadFilesRequestObject) (BatchDownloadFilesResponseObject, error)
+	// Unlink invoice from file
+	// (DELETE /api/files/invoice)
+	UnlinkFileInvoice(ctx context.Context, request UnlinkFileInvoiceRequestObject) (UnlinkFileInvoiceResponseObject, error)
 	// Move files
 	// (POST /api/files/move)
 	MoveFiles(ctx context.Context, request MoveFilesRequestObject) (MoveFilesResponseObject, error)
@@ -2243,6 +2328,33 @@ func (sh *strictHandler) BatchDownloadFiles(ctx *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	} else if validResponse, ok := response.(BatchDownloadFilesResponseObject); ok {
 		if err := validResponse.VisitBatchDownloadFilesResponse(ctx); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// UnlinkFileInvoice operation middleware
+func (sh *strictHandler) UnlinkFileInvoice(ctx *fiber.Ctx, params UnlinkFileInvoiceParams) error {
+	var request UnlinkFileInvoiceRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *fiber.Ctx, request interface{}) (interface{}, error) {
+		return sh.ssi.UnlinkFileInvoice(ctx.UserContext(), request.(UnlinkFileInvoiceRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UnlinkFileInvoice")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	} else if validResponse, ok := response.(UnlinkFileInvoiceResponseObject); ok {
+		if err := validResponse.VisitUnlinkFileInvoiceResponse(ctx); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, err.Error())
 		}
 	} else if response != nil {

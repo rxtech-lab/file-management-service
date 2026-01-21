@@ -43,6 +43,7 @@ type FileService interface {
 	UpdateFileProcessingStatus(userID string, fileID uint, status models.FileProcessingStatus, errMsg string) error
 	SetFileHasEmbedding(userID string, fileID uint, hasEmbedding bool) error
 	UpdateFileInvoiceID(userID string, fileID uint, invoiceID int64) error
+	UnlinkFileInvoiceByInvoiceID(userID string, invoiceID int64) error
 
 	// Folder operations
 	GetFilesInFolderRecursive(userID string, folderID uint) ([]models.File, error)
@@ -395,6 +396,33 @@ func (s *fileService) UpdateFileInvoiceID(userID string, fileID uint, invoiceID 
 	result := s.db.Model(&models.File{}).
 		Where("id = ? AND user_id = ?", fileID, userID).
 		Update("invoice_id", invoiceID)
+
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("file not found")
+	}
+	return nil
+}
+
+// UnlinkFileInvoiceByInvoiceID removes the invoice_id association from a file by invoice_id
+// Verifies the file belongs to the specified user before unlinking
+func (s *fileService) UnlinkFileInvoiceByInvoiceID(userID string, invoiceID int64) error {
+	// First, find the file with this invoice_id that belongs to this user
+	var file models.File
+	err := s.db.Where("invoice_id = ? AND user_id = ?", invoiceID, userID).First(&file).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return errors.New("file with invoice not found or does not belong to user")
+		}
+		return err
+	}
+
+	// Unlink the invoice
+	result := s.db.Model(&models.File{}).
+		Where("id = ? AND user_id = ?", file.ID, userID).
+		Update("invoice_id", nil)
 
 	if result.Error != nil {
 		return result.Error
