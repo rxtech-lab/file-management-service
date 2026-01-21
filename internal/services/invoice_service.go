@@ -9,11 +9,13 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // InvoiceConfig holds configuration for the invoice processing service
 type InvoiceConfig struct {
-	ServerURL string
+	ServerURL    string
+	McpServerURL string
 }
 
 // InvoiceStreamEvent represents a streaming response event from the invoice API
@@ -37,6 +39,11 @@ type InvoiceService interface {
 	// authToken: OAuth Bearer token from user context
 	// eventChan: receives real-time status updates (optional, can be nil)
 	ProcessInvoice(ctx context.Context, fileURL, authToken string, eventChan chan<- InvoiceStreamEvent) (*InvoiceResult, error)
+
+	// DeleteInvoice deletes an invoice by ID via the external API
+	// Returns nil on success, if no auth token, or if service is not enabled
+	// Retries 3 times on failure (total 4 attempts)
+	DeleteInvoice(ctx context.Context, invoiceID int64, authToken string) error
 
 	// IsEnabled returns whether invoice processing is configured
 	IsEnabled() bool
@@ -155,4 +162,56 @@ func (s *invoiceService) ProcessInvoice(ctx context.Context, fileURL, authToken 
 	}
 
 	return result, nil
+}
+
+// DeleteInvoice deletes an invoice by ID with retry logic
+// Returns nil on success, if no auth token is provided, or if service is not enabled
+func (s *invoiceService) DeleteInvoice(ctx context.Context, invoiceID int64, authToken string) error {
+	if authToken == "" {
+		log.Printf("[Invoice] No auth token provided, skipping invoice deletion for invoice_id=%d", invoiceID)
+		return nil
+	}
+
+	if !s.IsEnabled() {
+		log.Printf("[Invoice] Service not enabled, skipping invoice deletion for invoice_id=%d", invoiceID)
+		return nil
+	}
+
+	endpoint := fmt.Sprintf("%s/api/invoices/%d", s.config.McpServerURL, invoiceID)
+	retryDelays := []time.Duration{100 * time.Millisecond, 500 * time.Millisecond, 1000 * time.Millisecond}
+
+	var lastErr error
+	for attempt := 0; attempt <= len(retryDelays); attempt++ {
+		if attempt > 0 {
+			log.Printf("[Invoice] Retrying invoice deletion (attempt %d/%d) for invoice_id=%d", attempt, len(retryDelays), invoiceID)
+			time.Sleep(retryDelays[attempt-1])
+		}
+
+		req, err := http.NewRequestWithContext(ctx, "DELETE", endpoint, nil)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to create request: %w", err)
+			continue
+		}
+		req.Header.Set("Authorization", "Bearer "+authToken)
+
+		resp, err := s.client.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("request failed: %w", err)
+			continue
+		}
+		resp.Body.Close()
+
+		// Success cases: 200 OK, 204 No Content, 404 Not Found (already deleted)
+		if resp.StatusCode == http.StatusOK ||
+			resp.StatusCode == http.StatusNoContent ||
+			resp.StatusCode == http.StatusNotFound {
+			log.Printf("[Invoice] Successfully deleted invoice_id=%d (status: %d)", invoiceID, resp.StatusCode)
+			return nil
+		}
+
+		lastErr = fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+
+	log.Printf("[Invoice] Failed to delete invoice_id=%d after %d attempts: %v", invoiceID, len(retryDelays)+1, lastErr)
+	return lastErr
 }

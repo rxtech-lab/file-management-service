@@ -272,13 +272,15 @@ type DeleteFileTool struct {
 	service          services.FileService
 	uploadService    services.UploadService
 	embeddingService services.EmbeddingService
+	invoiceService   services.InvoiceService
 }
 
-func NewDeleteFileTool(service services.FileService, uploadService services.UploadService, embeddingService services.EmbeddingService) *DeleteFileTool {
+func NewDeleteFileTool(service services.FileService, uploadService services.UploadService, embeddingService services.EmbeddingService, invoiceService services.InvoiceService) *DeleteFileTool {
 	return &DeleteFileTool{
 		service:          service,
 		uploadService:    uploadService,
 		embeddingService: embeddingService,
+		invoiceService:   invoiceService,
 	}
 }
 
@@ -324,6 +326,18 @@ func (t *DeleteFileTool) GetHandler() server.ToolHandlerFunc {
 		// Delete embedding if exists (best effort)
 		if file.HasEmbedding && t.embeddingService != nil {
 			_ = t.embeddingService.DeleteFileEmbedding(userID, file.ID)
+		}
+
+		// Delete invoice if exists (best effort)
+		if file.InvoiceID != nil && t.invoiceService != nil && t.invoiceService.IsEnabled() {
+			authToken, _ := utils.GetRawAuthToken(ctx)
+			if authToken != "" {
+				invoiceID := *file.InvoiceID
+				go func() {
+					deleteCtx := context.Background()
+					_ = t.invoiceService.DeleteInvoice(deleteCtx, invoiceID, authToken)
+				}()
+			}
 		}
 
 		result, _ := json.Marshal(map[string]any{
