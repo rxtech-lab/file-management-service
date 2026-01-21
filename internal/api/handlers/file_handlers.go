@@ -242,6 +242,20 @@ func (h *StrictHandlers) DeleteFile(
 		_ = h.embeddingService.DeleteFileEmbedding(userID, file.ID)
 	}
 
+	// Delete invoice if exists (best effort - don't fail if invoice delete fails)
+	if file.InvoiceID != nil && h.invoiceService != nil && h.invoiceService.IsEnabled() {
+		authToken, _ := utils.GetRawAuthToken(ctx)
+		if authToken != "" {
+			invoiceID := *file.InvoiceID
+			go func() {
+				deleteCtx := context.Background()
+				if err := h.invoiceService.DeleteInvoice(deleteCtx, invoiceID, authToken); err != nil {
+					log.Printf("[Invoice] Best-effort deletion failed for invoice_id=%d: %v", invoiceID, err)
+				}
+			}()
+		}
+	}
+
 	return generated.DeleteFile204Response{}, nil
 }
 

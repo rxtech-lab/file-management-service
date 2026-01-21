@@ -57,6 +57,7 @@ func main() {
 		uploadService,
 		searchService,
 		embeddingService,
+		invoiceService,
 	)
 
 	// Initialize API server
@@ -251,8 +252,14 @@ func initInvoiceService() services.InvoiceService {
 		return nil
 	}
 
+	mcpServer := os.Getenv("INVOICE_MCP_SERVER_URL")
+	if mcpServer == "" {
+		log.Println("Warning: INVOICE_MCP_SERVER_URL not configured, invoice deletion may not work properly")
+	}
+
 	config := services.InvoiceConfig{
-		ServerURL: serverURL,
+		ServerURL:    serverURL,
+		McpServerURL: mcpServer,
 	}
 
 	log.Printf("Invoice service initialized (server: %s)", serverURL)

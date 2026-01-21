@@ -28,6 +28,7 @@ type TestSetup struct {
 	EmbeddingService     services.EmbeddingService
 	ContentParserService services.ContentParserService
 	SearchService        services.SearchService
+	InvoiceService       *services.MockInvoiceService
 	APIServer            *api.APIServer
 	App                  *fiber.App
 	TestUserID           string
@@ -51,6 +52,7 @@ func NewTestSetup(t *testing.T) *TestSetup {
 	summaryService := services.NewMockSummaryService()
 	searchService := services.NewSearchService(db, embeddingService)
 	agentService := services.NewMockAgentService()
+	invoiceService := services.NewMockInvoiceService(true)
 
 	// Create API server
 	apiServer := api.NewAPIServer(
@@ -64,7 +66,7 @@ func NewTestSetup(t *testing.T) *TestSetup {
 		searchService,
 		summaryService,
 		agentService,
-		nil, // No invoice service for tests
+		invoiceService,
 		nil, // No MCP server for tests
 	)
 
@@ -84,6 +86,7 @@ func NewTestSetup(t *testing.T) *TestSetup {
 		EmbeddingService:     embeddingService,
 		ContentParserService: contentParserService,
 		SearchService:        searchService,
+		InvoiceService:       invoiceService,
 		APIServer:            apiServer,
 		App:                  apiServer.GetFiberApp(),
 		TestUserID:           "test-user-123",

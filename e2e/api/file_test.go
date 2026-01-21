@@ -1,9 +1,12 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/suite"
 )
@@ -473,6 +476,115 @@ func (s *FileTestSuite) TestUnlinkFileInvoiceDifferentUsersSameInvoiceID() {
 	s.Require().NoError(err)
 	s.NotNil(file2InvoiceID)
 	s.Equal(sameInvoiceID, *file2InvoiceID)
+}
+
+func (s *FileTestSuite) TestDeleteFileWithInvoice() {
+	// Create a file and set invoice_id
+	fileID, err := s.setup.CreateTestFile("Invoice File", "files/test-user-123/invoice.pdf", "invoice.pdf", nil)
+	s.Require().NoError(err)
+
+	// Set invoice_id in database
+	db := s.setup.DBService.GetDB()
+	invoiceID := int64(12345)
+	err = db.Exec("UPDATE files SET invoice_id = ? WHERE id = ?", invoiceID, fileID).Error
+	s.Require().NoError(err)
+
+	// Delete the file with auth token
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/files/%d", fileID), nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Test-User-ID", s.setup.TestUserID)
+	req.Header.Set("X-Test-Auth-Token", "test-oauth-token")
+	resp, err := s.setup.App.Test(req, -1)
+	s.Require().NoError(err)
+	s.Equal(http.StatusNoContent, resp.StatusCode)
+
+	// Wait briefly for async invoice deletion
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify invoice deletion was called
+	calls := s.setup.InvoiceService.GetDeleteInvoiceCalls()
+	s.Require().Len(calls, 1)
+	s.Equal(invoiceID, calls[0].InvoiceID)
+	s.Equal("test-oauth-token", calls[0].AuthToken)
+}
+
+func (s *FileTestSuite) TestDeleteFileWithInvoiceNoAuthToken() {
+	// Create a file and set invoice_id
+	fileID, err := s.setup.CreateTestFile("Invoice File", "files/test-user-123/invoice2.pdf", "invoice2.pdf", nil)
+	s.Require().NoError(err)
+
+	// Set invoice_id in database
+	db := s.setup.DBService.GetDB()
+	invoiceID := int64(54321)
+	err = db.Exec("UPDATE files SET invoice_id = ? WHERE id = ?", invoiceID, fileID).Error
+	s.Require().NoError(err)
+
+	// Delete the file WITHOUT auth token (using standard MakeRequest which doesn't set X-Test-Auth-Token)
+	resp, err := s.setup.MakeRequest("DELETE", fmt.Sprintf("/api/files/%d", fileID), nil)
+	s.Require().NoError(err)
+	s.Equal(http.StatusNoContent, resp.StatusCode)
+
+	// Wait briefly
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify invoice deletion was NOT called (no auth token)
+	calls := s.setup.InvoiceService.GetDeleteInvoiceCalls()
+	s.Len(calls, 0)
+}
+
+func (s *FileTestSuite) TestDeleteFileWithoutInvoice() {
+	// Create a file without invoice_id
+	fileID, err := s.setup.CreateTestFile("Regular File", "files/test-user-123/regular.pdf", "regular.pdf", nil)
+	s.Require().NoError(err)
+
+	// Delete the file with auth token
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/files/%d", fileID), nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Test-User-ID", s.setup.TestUserID)
+	req.Header.Set("X-Test-Auth-Token", "test-oauth-token")
+	resp, err := s.setup.App.Test(req, -1)
+	s.Require().NoError(err)
+	s.Equal(http.StatusNoContent, resp.StatusCode)
+
+	// Wait briefly
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify invoice deletion was NOT called (no invoice_id on file)
+	calls := s.setup.InvoiceService.GetDeleteInvoiceCalls()
+	s.Len(calls, 0)
+}
+
+func (s *FileTestSuite) TestDeleteFileInvoiceDeletionFails() {
+	// Configure mock to fail
+	s.setup.InvoiceService.DeleteInvoiceFunc = func(ctx context.Context, invoiceID int64, authToken string) error {
+		return fmt.Errorf("invoice deletion failed")
+	}
+
+	// Create a file and set invoice_id
+	fileID, err := s.setup.CreateTestFile("Invoice File Fail", "files/test-user-123/invoice-fail.pdf", "invoice-fail.pdf", nil)
+	s.Require().NoError(err)
+
+	// Set invoice_id in database
+	db := s.setup.DBService.GetDB()
+	invoiceID := int64(99999)
+	err = db.Exec("UPDATE files SET invoice_id = ? WHERE id = ?", invoiceID, fileID).Error
+	s.Require().NoError(err)
+
+	// Delete the file with auth token
+	req := httptest.NewRequest("DELETE", fmt.Sprintf("/api/files/%d", fileID), nil)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Test-User-ID", s.setup.TestUserID)
+	req.Header.Set("X-Test-Auth-Token", "test-oauth-token")
+	resp, err := s.setup.App.Test(req, -1)
+	s.Require().NoError(err)
+
+	// File deletion should still succeed even if invoice deletion fails
+	s.Equal(http.StatusNoContent, resp.StatusCode)
+
+	// Verify file is actually deleted
+	resp, err = s.setup.MakeRequest("GET", fmt.Sprintf("/api/files/%d", fileID), nil)
+	s.Require().NoError(err)
+	s.Equal(http.StatusNotFound, resp.StatusCode)
 }
 
 func TestFileSuite(t *testing.T) {
