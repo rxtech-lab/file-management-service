@@ -13,6 +13,7 @@ import {
 } from "@/components/search/renderers";
 import { searchFilesAction } from "@/lib/actions/search-actions";
 import type { SearchResult, SearchType } from "@/lib/api/types";
+import "@rx-lab/dashboard-searching-ui/style.css";
 
 interface SiteHeaderProps {
   onUploadClick?: () => void;
@@ -77,7 +78,7 @@ export function SiteHeader({ onUploadClick }: SiteHeaderProps) {
       }
       return [];
     },
-    []
+    [],
   );
 
   // Result selection handler
@@ -91,7 +92,7 @@ export function SiteHeader({ onUploadClick }: SiteHeaderProps) {
       }
       setSearchOpen(false);
     },
-    [router]
+    [router],
   );
 
   // Tool action handler for closing dialog from within tool renderers
@@ -104,11 +105,14 @@ export function SiteHeader({ onUploadClick }: SiteHeaderProps) {
   // Render quick search result
   const renderResult = useCallback(
     (result: FileSearchResult, onSelect: () => void) => (
-      <div onClick={onSelect} className="cursor-pointer px-4 py-4 hover:bg-accent/50 transition-colors">
+      <div
+        onClick={onSelect}
+        className="cursor-pointer px-4 py-4 hover:bg-accent/50 transition-colors"
+      >
         <QuickSearchResult result={result.metadata} />
       </div>
     ),
-    []
+    [],
   );
 
   return (
