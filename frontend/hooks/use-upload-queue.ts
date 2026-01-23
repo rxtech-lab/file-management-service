@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { uploadFileAction } from "@/lib/actions/upload-actions";
+import { getPresignedURLAction } from "@/lib/actions/upload-actions";
 import {
   createFileAction,
   getFileAction,
@@ -96,19 +96,34 @@ export function useUploadQueue(folderId: number | null) {
   const processUpload = useCallback(
     async (item: UploadQueueItem) => {
       try {
-        // Step 1: Upload to S3
-        updateItem(item.id, { status: "uploading", progress: 10 });
+        // Step 1: Get presigned URL from backend
+        updateItem(item.id, { status: "uploading", progress: 5 });
 
-        const formData = new FormData();
-        formData.append("file", item.file);
+        const presignedResult = await getPresignedURLAction(
+          item.file.name,
+          item.file.type || "application/octet-stream"
+        );
 
-        const uploadResult = await uploadFileAction(formData);
-
-        if (!uploadResult.success || !uploadResult.data) {
-          throw new Error(uploadResult.error || "Upload failed");
+        if (!presignedResult.success || !presignedResult.data) {
+          throw new Error(presignedResult.error || "Failed to get upload URL");
         }
 
-        const s3Key = uploadResult.data.key;
+        const { upload_url, key: s3Key } = presignedResult.data;
+        updateItem(item.id, { progress: 15 });
+
+        // Step 2: Upload directly to S3
+        const uploadResponse = await fetch(upload_url, {
+          method: "PUT",
+          body: item.file,
+          headers: {
+            "Content-Type": item.file.type || "application/octet-stream",
+          },
+        });
+
+        if (!uploadResponse.ok) {
+          throw new Error(`S3 upload failed: ${uploadResponse.status}`);
+        }
+
         updateItem(item.id, {
           status: "creating",
           progress: 40,
