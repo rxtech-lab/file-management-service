@@ -13,6 +13,7 @@ import {
   Trash2,
   Sparkles,
   ExternalLink,
+  Eye,
 } from "lucide-react";
 import { useFileAction } from "@/hooks/use-file-action";
 import {
@@ -371,11 +372,12 @@ function FileTableRow({
   onDelete: (file: FileItem) => void;
 }) {
   const rowRef = useRef<HTMLTableRowElement>(null);
-  const { canOpen, getOpenHandlers, handleDoubleClick, handleOpenWith } =
+  const { canOpen, getOpenHandlers, handleDoubleClick, handleOpenWith, getPreviewHandlers, handlePreviewWith } =
     useFileAction();
 
   const fileCanOpen = canOpen(file);
   const handlers = getOpenHandlers(file);
+  const previewHandlers = getPreviewHandlers(file);
 
   // Handle highlight animation and scroll into view
   useEffect(() => {
@@ -497,6 +499,31 @@ function FileTableRow({
                           Default
                         </span>
                       )}
+                    </ContextMenuItem>
+                  );
+                })}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+            <ContextMenuSeparator />
+          </>
+        )}
+        {previewHandlers.length > 0 && (
+          <>
+            <ContextMenuSub>
+              <ContextMenuSubTrigger>
+                <Eye className="mr-2 h-4 w-4" />
+                Preview with
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent className="w-48">
+                {previewHandlers.map((plugin) => {
+                  const IconComponent = plugin.icon;
+                  return (
+                    <ContextMenuItem
+                      key={plugin.id}
+                      onClick={() => handlePreviewWith(file, plugin.id)}
+                    >
+                      <IconComponent className="mr-2 h-4 w-4" />
+                      {plugin.name}
                     </ContextMenuItem>
                   );
                 })}

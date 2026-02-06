@@ -127,6 +127,14 @@ type ClientInterface interface {
 	// StreamAgentProgress request
 	StreamAgentProgress(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetFileContent request
+	GetFileContent(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateFileContentWithBody request with any body
+	UpdateFileContentWithBody(ctx context.Context, id FileId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	UpdateFileContent(ctx context.Context, id FileId, body UpdateFileContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetFileDownloadURL request
 	GetFileDownloadURL(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -373,6 +381,42 @@ func (c *Client) UpdateFile(ctx context.Context, id FileId, body UpdateFileJSONR
 
 func (c *Client) StreamAgentProgress(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewStreamAgentProgressRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetFileContent(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFileContentRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateFileContentWithBody(ctx context.Context, id FileId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateFileContentRequestWithBody(c.Server, id, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UpdateFileContent(ctx context.Context, id FileId, body UpdateFileContentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateFileContentRequest(c.Server, id, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1297,6 +1341,87 @@ func NewStreamAgentProgressRequest(server string, id FileId) (*http.Request, err
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewGetFileContentRequest generates requests for GetFileContent
+func NewGetFileContentRequest(server string, id FileId) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/files/%s/content", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateFileContentRequest calls the generic UpdateFileContent builder with application/json body
+func NewUpdateFileContentRequest(server string, id FileId, body UpdateFileContentJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateFileContentRequestWithBody(server, id, "application/json", bodyReader)
+}
+
+// NewUpdateFileContentRequestWithBody generates requests for UpdateFileContent with any type of body
+func NewUpdateFileContentRequestWithBody(server string, id FileId, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "id", runtime.ParamLocationPath, id)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/files/%s/content", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -2530,6 +2655,14 @@ type ClientWithResponsesInterface interface {
 	// StreamAgentProgressWithResponse request
 	StreamAgentProgressWithResponse(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*StreamAgentProgressResponse, error)
 
+	// GetFileContentWithResponse request
+	GetFileContentWithResponse(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*GetFileContentResponse, error)
+
+	// UpdateFileContentWithBodyWithResponse request with any body
+	UpdateFileContentWithBodyWithResponse(ctx context.Context, id FileId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateFileContentResponse, error)
+
+	UpdateFileContentWithResponse(ctx context.Context, id FileId, body UpdateFileContentJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFileContentResponse, error)
+
 	// GetFileDownloadURLWithResponse request
 	GetFileDownloadURLWithResponse(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*GetFileDownloadURLResponse, error)
 
@@ -2850,6 +2983,55 @@ func (r StreamAgentProgressResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r StreamAgentProgressResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetFileContentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *FileContentResponse
+	JSON401      *Unauthorized
+	JSON404      *NotFound
+}
+
+// Status returns HTTPResponse.Status
+func (r GetFileContentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetFileContentResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UpdateFileContentResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *File
+	JSON400      *BadRequest
+	JSON401      *Unauthorized
+	JSON404      *NotFound
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateFileContentResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateFileContentResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -3529,6 +3711,32 @@ func (c *ClientWithResponses) StreamAgentProgressWithResponse(ctx context.Contex
 	return ParseStreamAgentProgressResponse(rsp)
 }
 
+// GetFileContentWithResponse request returning *GetFileContentResponse
+func (c *ClientWithResponses) GetFileContentWithResponse(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*GetFileContentResponse, error) {
+	rsp, err := c.GetFileContent(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetFileContentResponse(rsp)
+}
+
+// UpdateFileContentWithBodyWithResponse request with arbitrary body returning *UpdateFileContentResponse
+func (c *ClientWithResponses) UpdateFileContentWithBodyWithResponse(ctx context.Context, id FileId, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateFileContentResponse, error) {
+	rsp, err := c.UpdateFileContentWithBody(ctx, id, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateFileContentResponse(rsp)
+}
+
+func (c *ClientWithResponses) UpdateFileContentWithResponse(ctx context.Context, id FileId, body UpdateFileContentJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFileContentResponse, error) {
+	rsp, err := c.UpdateFileContent(ctx, id, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateFileContentResponse(rsp)
+}
+
 // GetFileDownloadURLWithResponse request returning *GetFileDownloadURLResponse
 func (c *ClientWithResponses) GetFileDownloadURLWithResponse(ctx context.Context, id FileId, reqEditors ...RequestEditorFn) (*GetFileDownloadURLResponse, error) {
 	rsp, err := c.GetFileDownloadURL(ctx, id, reqEditors...)
@@ -4170,6 +4378,93 @@ func ParseStreamAgentProgressResponse(rsp *http.Response) (*StreamAgentProgressR
 			return nil, err
 		}
 		response.JSON503 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetFileContentResponse parses an HTTP response from a GetFileContentWithResponse call
+func ParseGetFileContentResponse(rsp *http.Response) (*GetFileContentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetFileContentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FileContentResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateFileContentResponse parses an HTTP response from a UpdateFileContentWithResponse call
+func ParseUpdateFileContentResponse(rsp *http.Response) (*UpdateFileContentResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateFileContentResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest File
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	}
 

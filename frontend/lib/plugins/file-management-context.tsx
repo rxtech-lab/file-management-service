@@ -7,12 +7,14 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
+import type { ComponentType } from "react";
 import type { FileItem } from "@/lib/api/types";
 import type {
   FileManagementPlugin,
   FileManagementContextValue,
   FileOpenHandler,
   FileManagementProviderProps,
+  PreviewComponentProps,
 } from "./types";
 
 const FileManagementContext = createContext<FileManagementContextValue | null>(
@@ -27,6 +29,64 @@ export function FileManagementProvider({
 }: FileManagementProviderProps) {
   const [plugins, setPlugins] =
     useState<FileManagementPlugin[]>(initialPlugins);
+  const [previewFile, setPreviewFile] = useState<FileItem | null>(null);
+  const [previewComponent, setPreviewComponent] = useState<ComponentType<PreviewComponentProps> | null>(null);
+
+  const canPreview = useCallback(
+    (file: FileItem): boolean => {
+      return plugins.some((plugin) => {
+        const config = configs[plugin.id];
+        if (config?.enabled === false) return false;
+        return plugin.onPreview?.(file) !== null && plugin.onPreview?.(file) !== undefined;
+      });
+    },
+    [plugins, configs]
+  );
+
+  const openPreview = useCallback(
+    (file: FileItem) => {
+      for (const plugin of plugins) {
+        const config = configs[plugin.id];
+        if (config?.enabled === false) continue;
+        const component = plugin.onPreview?.(file);
+        if (component) {
+          setPreviewFile(file);
+          setPreviewComponent(() => component);
+          return;
+        }
+      }
+    },
+    [plugins, configs]
+  );
+
+  const openPreviewWith = useCallback(
+    (file: FileItem, pluginId: string) => {
+      const plugin = plugins.find((p) => p.id === pluginId);
+      if (!plugin) return;
+      const component = plugin.onPreview?.(file);
+      if (component) {
+        setPreviewFile(file);
+        setPreviewComponent(() => component);
+      }
+    },
+    [plugins]
+  );
+
+  const getPreviewHandlers = useCallback(
+    (file: FileItem) => {
+      return plugins.filter((plugin) => {
+        const config = configs[plugin.id];
+        if (config?.enabled === false) return false;
+        return plugin.onPreview?.(file) != null;
+      });
+    },
+    [plugins, configs]
+  );
+
+  const closePreview = useCallback(() => {
+    setPreviewFile(null);
+    setPreviewComponent(null);
+  }, []);
 
   const registerPlugin = useCallback((plugin: FileManagementPlugin) => {
     setPlugins((prev) => {
@@ -94,6 +154,13 @@ export function FileManagementProvider({
       getOpenHandlers,
       getDefaultHandler,
       callbacks,
+      previewFile,
+      previewComponent,
+      openPreview,
+      openPreviewWith,
+      getPreviewHandlers,
+      closePreview,
+      canPreview,
     }),
     [
       plugins,
@@ -103,6 +170,13 @@ export function FileManagementProvider({
       getOpenHandlers,
       getDefaultHandler,
       callbacks,
+      previewFile,
+      previewComponent,
+      openPreview,
+      openPreviewWith,
+      getPreviewHandlers,
+      closePreview,
+      canPreview,
     ]
   );
 

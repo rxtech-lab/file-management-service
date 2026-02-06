@@ -13,6 +13,7 @@ import {
   Trash2,
   Sparkles,
   ExternalLink,
+  Eye,
 } from "lucide-react";
 import { useFileAction } from "@/hooks/use-file-action";
 import { Card, CardContent } from "@/components/ui/card";
@@ -83,11 +84,12 @@ export function FileCard({
   const [isHovered, setIsHovered] = useState(false);
   const [isHighlightAnimating, setIsHighlightAnimating] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
-  const { canOpen, getOpenHandlers, handleDoubleClick, handleOpenWith } =
+  const { canOpen, getOpenHandlers, handleDoubleClick, handleOpenWith, canPreview, getPreviewHandlers, handlePreviewWith } =
     useFileAction();
 
   const fileCanOpen = canOpen(file);
   const handlers = getOpenHandlers(file);
+  const previewHandlers = getPreviewHandlers(file);
 
   // Handle highlight animation
   useEffect(() => {
@@ -295,6 +297,31 @@ export function FileCard({
                           Default
                         </span>
                       )}
+                    </ContextMenuItem>
+                  );
+                })}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+            <ContextMenuSeparator />
+          </>
+        )}
+        {previewHandlers.length > 0 && (
+          <>
+            <ContextMenuSub>
+              <ContextMenuSubTrigger>
+                <Eye className="mr-2 h-4 w-4" />
+                Preview with
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent className="w-72">
+                {previewHandlers.map((plugin) => {
+                  const IconComponent = plugin.icon;
+                  return (
+                    <ContextMenuItem
+                      key={plugin.id}
+                      onClick={() => handlePreviewWith(file, plugin.id)}
+                    >
+                      <IconComponent className="mr-2 h-4 w-4" />
+                      {plugin.name}
                     </ContextMenuItem>
                   );
                 })}
