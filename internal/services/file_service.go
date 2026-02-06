@@ -224,6 +224,7 @@ func (s *fileService) UpdateFile(userID string, file *models.File) error {
 		"title":     file.Title,
 		"summary":   file.Summary,
 		"file_type": file.FileType,
+		"size":      file.Size,
 	}
 
 	// Only update folder_id if provided

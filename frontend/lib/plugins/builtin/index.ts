@@ -1,4 +1,5 @@
 import { createInvoicePlugin } from "./invoice-plugin";
+import { createYamlEditorPlugin } from "./yaml-editor-plugin";
 import type { FileManagementPlugin } from "../types";
 
 /**
@@ -6,7 +7,7 @@ import type { FileManagementPlugin } from "../types";
  * Environment variables are read at plugin creation time.
  */
 export function getBuiltinPlugins(): FileManagementPlugin[] {
-  return [createInvoicePlugin()];
+  return [createInvoicePlugin(), createYamlEditorPlugin()];
 }
 
-export { createInvoicePlugin };
+export { createInvoicePlugin, createYamlEditorPlugin };

@@ -13,6 +13,8 @@ import { FolderBreadcrumb } from "@/components/folders/folder-breadcrumb";
 import { CreateFolderDialog } from "@/components/folders/create-folder-dialog";
 import { UploadQueue } from "@/components/upload/upload-queue";
 import { FileMetadataSheet } from "@/components/files/file-metadata-sheet";
+import { FilePreviewDialog } from "@/components/editor/file-preview-dialog";
+import { MoveFileDialog } from "@/components/editor/move-file-dialog";
 import { triggerAIOrganize, triggerAIOrganizeFolder } from "@/components/ai/ai-organize-dialog";
 import { DndProvider } from "@/components/dnd/dnd-provider";
 import { DroppableFolder } from "@/components/dnd/droppable-folder";
@@ -69,6 +71,9 @@ export function FilesPageClient({
 
   // Metadata sheet state
   const [metadataFile, setMetadataFile] = useState<FileItem | null>(null);
+
+  // Move file dialog state
+  const [moveFile, setMoveFile] = useState<FileItem | null>(null);
 
   // File input ref for upload
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -139,8 +144,7 @@ export function FilesPageClient({
   };
 
   const handleFileMove = (file: FileItem) => {
-    // TODO: Open move dialog
-    console.log("Move file:", file);
+    setMoveFile(file);
   };
 
   const handleFileManageTags = (file: FileItem) => {
@@ -319,6 +323,22 @@ export function FilesPageClient({
         open={metadataFile !== null}
         onOpenChange={(open) => {
           if (!open) setMetadataFile(null);
+        }}
+      />
+
+      <FilePreviewDialog />
+
+      <MoveFileDialog
+        currentFolderId={moveFile?.folder_id ?? null}
+        open={moveFile !== null}
+        onOpenChange={(open) => {
+          if (!open) setMoveFile(null);
+        }}
+        onMove={async (folderId) => {
+          if (moveFile) {
+            await handleMoveFiles([moveFile.id], folderId);
+            setMoveFile(null);
+          }
         }}
       />
     </DndProvider>

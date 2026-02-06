@@ -47,6 +47,12 @@ type ServerInterface interface {
 	// Stream AI agent progress
 	// (GET /api/files/{id}/agent-stream)
 	StreamAgentProgress(c *fiber.Ctx, id FileId) error
+	// Get file content
+	// (GET /api/files/{id}/content)
+	GetFileContent(c *fiber.Ctx, id FileId) error
+	// Update file content
+	// (PUT /api/files/{id}/content)
+	UpdateFileContent(c *fiber.Ctx, id FileId) error
 	// Get file download URL
 	// (GET /api/files/{id}/download)
 	GetFileDownloadURL(c *fiber.Ctx, id FileId) error
@@ -350,6 +356,42 @@ func (siw *ServerInterfaceWrapper) StreamAgentProgress(c *fiber.Ctx) error {
 	c.Context().SetUserValue(BearerAuthScopes, []string{})
 
 	return siw.Handler.StreamAgentProgress(c, id)
+}
+
+// GetFileContent operation middleware
+func (siw *ServerInterfaceWrapper) GetFileContent(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id FileId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.GetFileContent(c, id)
+}
+
+// UpdateFileContent operation middleware
+func (siw *ServerInterfaceWrapper) UpdateFileContent(c *fiber.Ctx) error {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id FileId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Params("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, fmt.Errorf("Invalid format for parameter id: %w", err).Error())
+	}
+
+	c.Context().SetUserValue(BearerAuthScopes, []string{})
+
+	return siw.Handler.UpdateFileContent(c, id)
 }
 
 // GetFileDownloadURL operation middleware
@@ -912,6 +954,10 @@ func RegisterHandlersWithOptions(router fiber.Router, si ServerInterface, option
 
 	router.Get(options.BaseURL+"/api/files/:id/agent-stream", wrapper.StreamAgentProgress)
 
+	router.Get(options.BaseURL+"/api/files/:id/content", wrapper.GetFileContent)
+
+	router.Put(options.BaseURL+"/api/files/:id/content", wrapper.UpdateFileContent)
+
 	router.Get(options.BaseURL+"/api/files/:id/download", wrapper.GetFileDownloadURL)
 
 	router.Post(options.BaseURL+"/api/files/:id/organize", wrapper.OrganizeFile)
@@ -1324,6 +1370,86 @@ type StreamAgentProgress503JSONResponse Error
 func (response StreamAgentProgress503JSONResponse) VisitStreamAgentProgressResponse(ctx *fiber.Ctx) error {
 	ctx.Response().Header.Set("Content-Type", "application/json")
 	ctx.Status(503)
+
+	return ctx.JSON(&response)
+}
+
+type GetFileContentRequestObject struct {
+	Id FileId `json:"id"`
+}
+
+type GetFileContentResponseObject interface {
+	VisitGetFileContentResponse(ctx *fiber.Ctx) error
+}
+
+type GetFileContent200JSONResponse FileContentResponse
+
+func (response GetFileContent200JSONResponse) VisitGetFileContentResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(200)
+
+	return ctx.JSON(&response)
+}
+
+type GetFileContent401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetFileContent401JSONResponse) VisitGetFileContentResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(401)
+
+	return ctx.JSON(&response)
+}
+
+type GetFileContent404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetFileContent404JSONResponse) VisitGetFileContentResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(404)
+
+	return ctx.JSON(&response)
+}
+
+type UpdateFileContentRequestObject struct {
+	Id   FileId `json:"id"`
+	Body *UpdateFileContentJSONRequestBody
+}
+
+type UpdateFileContentResponseObject interface {
+	VisitUpdateFileContentResponse(ctx *fiber.Ctx) error
+}
+
+type UpdateFileContent200JSONResponse File
+
+func (response UpdateFileContent200JSONResponse) VisitUpdateFileContentResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(200)
+
+	return ctx.JSON(&response)
+}
+
+type UpdateFileContent400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateFileContent400JSONResponse) VisitUpdateFileContentResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(400)
+
+	return ctx.JSON(&response)
+}
+
+type UpdateFileContent401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response UpdateFileContent401JSONResponse) VisitUpdateFileContentResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(401)
+
+	return ctx.JSON(&response)
+}
+
+type UpdateFileContent404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response UpdateFileContent404JSONResponse) VisitUpdateFileContentResponse(ctx *fiber.Ctx) error {
+	ctx.Response().Header.Set("Content-Type", "application/json")
+	ctx.Status(404)
 
 	return ctx.JSON(&response)
 }
@@ -2138,6 +2264,12 @@ type StrictServerInterface interface {
 	// Stream AI agent progress
 	// (GET /api/files/{id}/agent-stream)
 	StreamAgentProgress(ctx context.Context, request StreamAgentProgressRequestObject) (StreamAgentProgressResponseObject, error)
+	// Get file content
+	// (GET /api/files/{id}/content)
+	GetFileContent(ctx context.Context, request GetFileContentRequestObject) (GetFileContentResponseObject, error)
+	// Update file content
+	// (PUT /api/files/{id}/content)
+	UpdateFileContent(ctx context.Context, request UpdateFileContentRequestObject) (UpdateFileContentResponseObject, error)
 	// Get file download URL
 	// (GET /api/files/{id}/download)
 	GetFileDownloadURL(ctx context.Context, request GetFileDownloadURLRequestObject) (GetFileDownloadURLResponseObject, error)
@@ -2500,6 +2632,66 @@ func (sh *strictHandler) StreamAgentProgress(ctx *fiber.Ctx, id FileId) error {
 		return fiber.NewError(fiber.StatusBadRequest, err.Error())
 	} else if validResponse, ok := response.(StreamAgentProgressResponseObject); ok {
 		if err := validResponse.VisitStreamAgentProgressResponse(ctx); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// GetFileContent operation middleware
+func (sh *strictHandler) GetFileContent(ctx *fiber.Ctx, id FileId) error {
+	var request GetFileContentRequestObject
+
+	request.Id = id
+
+	handler := func(ctx *fiber.Ctx, request interface{}) (interface{}, error) {
+		return sh.ssi.GetFileContent(ctx.UserContext(), request.(GetFileContentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetFileContent")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	} else if validResponse, ok := response.(GetFileContentResponseObject); ok {
+		if err := validResponse.VisitGetFileContentResponse(ctx); err != nil {
+			return fiber.NewError(fiber.StatusBadRequest, err.Error())
+		}
+	} else if response != nil {
+		return fmt.Errorf("unexpected response type: %T", response)
+	}
+	return nil
+}
+
+// UpdateFileContent operation middleware
+func (sh *strictHandler) UpdateFileContent(ctx *fiber.Ctx, id FileId) error {
+	var request UpdateFileContentRequestObject
+
+	request.Id = id
+
+	var body UpdateFileContentJSONRequestBody
+	if err := ctx.BodyParser(&body); err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	}
+	request.Body = &body
+
+	handler := func(ctx *fiber.Ctx, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateFileContent(ctx.UserContext(), request.(UpdateFileContentRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateFileContent")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		return fiber.NewError(fiber.StatusBadRequest, err.Error())
+	} else if validResponse, ok := response.(UpdateFileContentResponseObject); ok {
+		if err := validResponse.VisitUpdateFileContentResponse(ctx); err != nil {
 			return fiber.NewError(fiber.StatusBadRequest, err.Error())
 		}
 	} else if response != nil {

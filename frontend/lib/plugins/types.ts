@@ -3,6 +3,64 @@ import type { FileItem } from "@/lib/api/types";
 import type { LucideIcon } from "lucide-react";
 
 /**
+ * Menu item definition with keyboard shortcut support.
+ * Triggered by both onClick and keyboard shortcut.
+ */
+export interface ToolbarMenuItem {
+  id: string;
+  title: string;
+  description: string;
+  shortcut: string;
+  icon?: LucideIcon | ComponentType<{ className?: string }>;
+  onAction: () => void | Promise<void>;
+  disabled?: boolean;
+  /** If true, renders a separator before this item */
+  separator?: boolean;
+}
+
+/**
+ * A toolbar menu group (e.g., "File", "Edit", "View")
+ */
+export interface ToolbarMenuGroup {
+  id: string;
+  label: string;
+  items: ToolbarMenuItem[];
+}
+
+/**
+ * Common editor actions passed to toolbar menu builders
+ */
+export interface EditorActions {
+  save: () => Promise<void>;
+  saveACopy: () => Promise<void>;
+  createNewFile: () => Promise<void>;
+  moveFile: () => void;
+  downloadFile: () => void;
+}
+
+/**
+ * Editor configuration provided by a plugin
+ */
+export interface EditorConfig {
+  /** URL for the full edit page */
+  getEditUrl: (file: FileItem) => string;
+
+  /** Toolbar menu groups for the edit page */
+  getToolbarMenus?: (
+    file: FileItem,
+    actions: EditorActions,
+  ) => ToolbarMenuGroup[];
+
+  /** Custom toolbar component to render alongside default menus */
+  renderToolbarExtras?: (file: FileItem) => ReactNode;
+}
+
+export interface PreviewComponentProps {
+  file: FileItem;
+  content: string;
+}
+
+/**
  * Core plugin interface for file management actions.
  * Plugins can handle file opening, and future actions like delete, preview, etc.
  */
@@ -36,6 +94,15 @@ export interface FileManagementPlugin {
    * Only one plugin should return true for a given file type.
    */
   isDefault?: (file: FileItem) => boolean;
+
+  /**
+   * Return a preview component for this file, or null if the plugin can't preview it.
+   * Used by the context menu "Preview" button.
+   */
+  onPreview?: (file: FileItem) => ComponentType<PreviewComponentProps> | null;
+
+  /** Editor configuration - if provided, the plugin supports full editing */
+  editor?: EditorConfig;
 }
 
 /**
@@ -95,6 +162,27 @@ export interface FileManagementContextValue {
 
   /** Action callbacks */
   callbacks?: FileActionCallbacks;
+
+  /** File currently being previewed (null when no preview is open) */
+  previewFile: FileItem | null;
+
+  /** The preview component to render for the current preview file */
+  previewComponent: ComponentType<PreviewComponentProps> | null;
+
+  /** Open preview dialog for a file - finds the right plugin's onPreview */
+  openPreview: (file: FileItem) => void;
+
+  /** Open preview dialog using a specific plugin */
+  openPreviewWith: (file: FileItem, pluginId: string) => void;
+
+  /** Get plugins that can preview this file */
+  getPreviewHandlers: (file: FileItem) => FileManagementPlugin[];
+
+  /** Close the preview dialog */
+  closePreview: () => void;
+
+  /** Check if any plugin can preview this file */
+  canPreview: (file: FileItem) => boolean;
 }
 
 /**

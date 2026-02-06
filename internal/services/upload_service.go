@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"path/filepath"
 	"time"
 
@@ -20,6 +21,8 @@ type UploadService interface {
 	GetPresignedUploadURL(ctx context.Context, userID string, filename string, contentType string) (string, string, error)
 	GetPresignedDownloadURL(ctx context.Context, key string) (string, error)
 	DeleteFile(ctx context.Context, key string) error
+	DownloadFile(ctx context.Context, key string) ([]byte, string, error)
+	UploadToExistingKey(ctx context.Context, key string, content []byte, contentType string) error
 }
 
 // S3Config holds S3 configuration
@@ -136,6 +139,44 @@ func (s *uploadService) GetPresignedDownloadURL(ctx context.Context, key string)
 	return presignResult.URL, nil
 }
 
+// DownloadFile downloads file content from S3
+func (s *uploadService) DownloadFile(ctx context.Context, key string) ([]byte, string, error) {
+	result, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to download file: %w", err)
+	}
+	defer result.Body.Close()
+
+	content, err := io.ReadAll(result.Body)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read file content: %w", err)
+	}
+
+	contentType := ""
+	if result.ContentType != nil {
+		contentType = *result.ContentType
+	}
+
+	return content, contentType, nil
+}
+
+// UploadToExistingKey overwrites content at an existing S3 key
+func (s *uploadService) UploadToExistingKey(ctx context.Context, key string, content []byte, contentType string) error {
+	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:      aws.String(s.bucket),
+		Key:         aws.String(key),
+		Body:        bytes.NewReader(content),
+		ContentType: aws.String(contentType),
+	})
+	if err != nil {
+		return fmt.Errorf("failed to upload file: %w", err)
+	}
+	return nil
+}
+
 // DeleteFile deletes a file from S3
 func (s *uploadService) DeleteFile(ctx context.Context, key string) error {
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
@@ -180,5 +221,18 @@ func (m *MockUploadService) GetPresignedDownloadURL(ctx context.Context, key str
 
 func (m *MockUploadService) DeleteFile(ctx context.Context, key string) error {
 	delete(m.files, key)
+	return nil
+}
+
+func (m *MockUploadService) DownloadFile(ctx context.Context, key string) ([]byte, string, error) {
+	content, ok := m.files[key]
+	if !ok {
+		return nil, "", fmt.Errorf("file not found: %s", key)
+	}
+	return content, "application/octet-stream", nil
+}
+
+func (m *MockUploadService) UploadToExistingKey(ctx context.Context, key string, content []byte, contentType string) error {
+	m.files[key] = content
 	return nil
 }
