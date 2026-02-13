@@ -78,77 +78,17 @@ func (s *MCPServer) initializeTools(
 		), nil
 	})
 
-	// Tag Tools
-	createTagTool := tools.NewCreateTagTool(tagService)
-	srv.AddTool(createTagTool.GetTool(), createTagTool.GetHandler())
+	// Tag Tool (unified CRUD)
+	tagTool := tools.NewTagTool(tagService)
+	srv.AddTool(tagTool.GetTool(), tagTool.GetHandler())
 
-	listTagsTool := tools.NewListTagsTool(tagService)
-	srv.AddTool(listTagsTool.GetTool(), listTagsTool.GetHandler())
+	// Folder Tool (unified CRUD + move, tree, tags)
+	folderTool := tools.NewFolderTool(folderService, fileService, uploadService, embeddingService)
+	srv.AddTool(folderTool.GetTool(), folderTool.GetHandler())
 
-	getTagTool := tools.NewGetTagTool(tagService)
-	srv.AddTool(getTagTool.GetTool(), getTagTool.GetHandler())
-
-	updateTagTool := tools.NewUpdateTagTool(tagService)
-	srv.AddTool(updateTagTool.GetTool(), updateTagTool.GetHandler())
-
-	deleteTagTool := tools.NewDeleteTagTool(tagService)
-	srv.AddTool(deleteTagTool.GetTool(), deleteTagTool.GetHandler())
-
-	// Folder Tools
-	createFolderTool := tools.NewCreateFolderTool(folderService)
-	srv.AddTool(createFolderTool.GetTool(), createFolderTool.GetHandler())
-
-	listFoldersTool := tools.NewListFoldersTool(folderService)
-	srv.AddTool(listFoldersTool.GetTool(), listFoldersTool.GetHandler())
-
-	getFolderTool := tools.NewGetFolderTool(folderService)
-	srv.AddTool(getFolderTool.GetTool(), getFolderTool.GetHandler())
-
-	updateFolderTool := tools.NewUpdateFolderTool(folderService)
-	srv.AddTool(updateFolderTool.GetTool(), updateFolderTool.GetHandler())
-
-	deleteFolderTool := tools.NewDeleteFolderTool(folderService, fileService, uploadService, embeddingService)
-	srv.AddTool(deleteFolderTool.GetTool(), deleteFolderTool.GetHandler())
-
-	moveFolderTool := tools.NewMoveFolderTool(folderService)
-	srv.AddTool(moveFolderTool.GetTool(), moveFolderTool.GetHandler())
-
-	getFolderTreeTool := tools.NewGetFolderTreeTool(folderService)
-	srv.AddTool(getFolderTreeTool.GetTool(), getFolderTreeTool.GetHandler())
-
-	addTagsToFolderTool := tools.NewAddTagsToFolderTool(folderService)
-	srv.AddTool(addTagsToFolderTool.GetTool(), addTagsToFolderTool.GetHandler())
-
-	removeTagsFromFolderTool := tools.NewRemoveTagsFromFolderTool(folderService)
-	srv.AddTool(removeTagsFromFolderTool.GetTool(), removeTagsFromFolderTool.GetHandler())
-
-	// File Tools
-	createFileTool := tools.NewCreateFileTool(fileService)
-	srv.AddTool(createFileTool.GetTool(), createFileTool.GetHandler())
-
-	listFilesTool := tools.NewListFilesTool(fileService)
-	srv.AddTool(listFilesTool.GetTool(), listFilesTool.GetHandler())
-
-	getFileTool := tools.NewGetFileTool(fileService)
-	srv.AddTool(getFileTool.GetTool(), getFileTool.GetHandler())
-
-	updateFileTool := tools.NewUpdateFileTool(fileService)
-	srv.AddTool(updateFileTool.GetTool(), updateFileTool.GetHandler())
-
-	deleteFileTool := tools.NewDeleteFileTool(fileService, uploadService, embeddingService, invoiceService)
-	srv.AddTool(deleteFileTool.GetTool(), deleteFileTool.GetHandler())
-
-	moveFilesTool := tools.NewMoveFilesTool(fileService)
-	srv.AddTool(moveFilesTool.GetTool(), moveFilesTool.GetHandler())
-
-	addTagsToFileTool := tools.NewAddTagsToFileTool(fileService)
-	srv.AddTool(addTagsToFileTool.GetTool(), addTagsToFileTool.GetHandler())
-
-	removeTagsFromFileTool := tools.NewRemoveTagsFromFileTool(fileService)
-	srv.AddTool(removeTagsFromFileTool.GetTool(), removeTagsFromFileTool.GetHandler())
-
-	getFileDownloadURLTool := tools.NewGetFileDownloadURLTool(fileService, uploadService)
-	srv.AddTool(getFileDownloadURLTool.GetTool(), getFileDownloadURLTool.GetHandler())
+	// File Tool (unified CRUD + move, tags, download URL)
+	fileTool := tools.NewFileTool(fileService, uploadService, embeddingService, invoiceService)
+	srv.AddTool(fileTool.GetTool(), fileTool.GetHandler())
 
 	// Upload Tools
 	getPresignedURLTool := tools.NewGetPresignedURLTool(uploadService)
@@ -184,83 +124,86 @@ func (s *MCPServer) SendMessageToAiClient(messages []mcp.SamplingMessage) error 
 func getToolInstructions(category string) string {
 	switch category {
 	case "tag":
-		return `Tag Management Tools:
+		return `Tag Management Tool:
 
-1. create_tag - Create a new tag
-   Parameters: name (required), description, color
+manage_tags - Unified tag management tool
+   action: create - Create a new tag
+      Parameters: name (required), description, color
 
-2. list_tags - List all tags with optional search
-   Parameters: keyword, limit, offset
+   action: list - List all tags with optional search
+      Parameters: keyword, limit, offset
 
-3. get_tag - Get a tag by ID
-   Parameters: tag_id (required)
+   action: get - Get a tag by ID
+      Parameters: tag_id (required)
 
-4. update_tag - Update an existing tag
-   Parameters: tag_id (required), name, description, color
+   action: update - Update an existing tag
+      Parameters: tag_id (required), name, description, color
 
-5. delete_tag - Delete a tag
-   Parameters: tag_id (required)`
+   action: delete - Delete a tag
+      Parameters: tag_id (required)`
 
 	case "folder":
-		return `Folder Management Tools:
+		return `Folder Management Tool:
 
-1. create_folder - Create a new folder
-   Parameters: name (required), description, parent_id
+manage_folders - Unified folder management tool
+   action: create - Create a new folder
+      Parameters: name (required), description, parent_id
 
-2. list_folders - List folders with optional filtering
-   Parameters: keyword, parent_id, tag_ids, limit, offset
+   action: list - List folders with optional filtering
+      Parameters: keyword, parent_id, tag_ids, limit, offset
 
-3. get_folder - Get a folder by ID
-   Parameters: folder_id (required)
+   action: get - Get a folder by ID
+      Parameters: folder_id (required)
 
-4. update_folder - Update an existing folder
-   Parameters: folder_id (required), name, description
+   action: update - Update an existing folder
+      Parameters: folder_id (required), name, description
 
-5. delete_folder - Delete a folder
-   Parameters: folder_id (required)
+   action: delete - Delete a folder
+      Parameters: folder_id (required)
 
-6. move_folder - Move a folder to a new parent
-   Parameters: folder_id (required), parent_id
+   action: move - Move a folder to a new parent
+      Parameters: folder_id (required), parent_id
 
-7. get_folder_tree - Get folder tree structure
-   Parameters: parent_id (optional)
+   action: get_tree - Get folder tree structure
+      Parameters: parent_id (optional)
 
-8. add_tags_to_folder - Add tags to a folder
-   Parameters: folder_id (required), tag_ids (required)
+   action: add_tags - Add tags to a folder
+      Parameters: folder_id (required), tag_ids (required)
 
-9. remove_tags_from_folder - Remove tags from a folder
-   Parameters: folder_id (required), tag_ids (required)`
+   action: remove_tags - Remove tags from a folder
+      Parameters: folder_id (required), tag_ids (required)`
 
 	case "file":
-		return `File Management Tools:
+		return `File Management Tool:
 
-1. create_file - Create a new file record
-   Parameters: title (required), s3_key (required), original_filename (required),
-               file_type, folder_id, mime_type, size
+manage_files - Unified file management tool
+   action: create - Create a new file record
+      Parameters: title (required), s3_key (required), original_filename (required),
+                  file_type, folder_id, mime_type, size
 
-2. list_files - List files with filtering
-   Parameters: keyword, folder_id, file_type, tag_ids, status, sort_by, sort_order, limit, offset
+   action: list - List files with filtering
+      Parameters: keyword, folder_id, file_type, tag_ids, status, sort_by, sort_order, limit, offset
 
-3. get_file - Get a file by ID
-   Parameters: file_id (required)
+   action: get - Get a file by ID
+      Parameters: file_id (required)
 
-4. update_file - Update an existing file
-   Parameters: file_id (required), title, summary, file_type, folder_id
+   action: update - Update an existing file
+      Parameters: file_id (required), title, summary, file_type, folder_id
 
-5. delete_file - Delete a file
-   Parameters: file_id (required)
+   action: delete - Delete a file
+      Parameters: file_id (required)
 
-6. move_files - Move files to a different folder
-   Parameters: file_ids (required), folder_id
+   action: move - Move files to a different folder
+      Parameters: file_ids (required), folder_id
 
-7. add_tags_to_file - Add tags to a file
-   Parameters: file_id (required), tag_ids (required)
+   action: add_tags - Add tags to a file
+      Parameters: file_id (required), tag_ids (required)
 
-8. remove_tags_from_file - Remove tags from a file
-   Parameters: file_id (required), tag_ids (required)
+   action: remove_tags - Remove tags from a file
+      Parameters: file_id (required), tag_ids (required)
 
-9. get_file_download_url - Get presigned download URL
-   Parameters: file_id (required)`
+   action: get_download_url - Get presigned download URL
+      Parameters: file_id (required)`
 
 	case "search":
 		return `Search Tools:
@@ -288,35 +231,19 @@ func getToolInstructions(category string) string {
 		return `File Management MCP Tools Overview:
 
 This MCP server provides tools for managing files, folders, tags, and search.
+Each resource has a single unified tool with an 'action' parameter.
 
-TAG MANAGEMENT (5 tools):
-- create_tag: Create a new tag
-- list_tags: List tags with search
-- get_tag: Get tag details
-- update_tag: Update a tag
-- delete_tag: Delete a tag
+TAG MANAGEMENT (1 tool):
+- manage_tags: Unified tag operations
+  Actions: create, list, get, update, delete
 
-FOLDER MANAGEMENT (9 tools):
-- create_folder: Create a new folder
-- list_folders: List folders with filters
-- get_folder: Get folder details
-- update_folder: Update a folder
-- delete_folder: Delete a folder
-- move_folder: Move folder to new parent
-- get_folder_tree: Get folder hierarchy
-- add_tags_to_folder: Tag a folder
-- remove_tags_from_folder: Untag a folder
+FOLDER MANAGEMENT (1 tool):
+- manage_folders: Unified folder operations
+  Actions: create, list, get, update, delete, move, get_tree, add_tags, remove_tags
 
-FILE MANAGEMENT (9 tools):
-- create_file: Create file record
-- list_files: List with filters
-- get_file: Get file details
-- update_file: Update a file
-- delete_file: Delete a file
-- move_files: Batch move files
-- add_tags_to_file: Tag a file
-- remove_tags_from_file: Untag a file
-- get_file_download_url: Get download URL
+FILE MANAGEMENT (1 tool):
+- manage_files: Unified file operations
+  Actions: create, list, get, update, delete, move, add_tags, remove_tags, get_download_url
 
 SEARCH (1 tool):
 - search_files: Search with fulltext, semantic, or hybrid mode

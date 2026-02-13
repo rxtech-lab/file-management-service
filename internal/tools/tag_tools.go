@@ -12,25 +12,30 @@ import (
 	"github.com/rxtech-lab/invoice-management/internal/utils"
 )
 
-// CreateTagTool handles creating a new tag
-type CreateTagTool struct {
+// TagTool handles all tag CRUD operations via a single tool with an action parameter
+type TagTool struct {
 	service services.TagService
 }
 
-func NewCreateTagTool(service services.TagService) *CreateTagTool {
-	return &CreateTagTool{service: service}
+func NewTagTool(service services.TagService) *TagTool {
+	return &TagTool{service: service}
 }
 
-func (t *CreateTagTool) GetTool() mcp.Tool {
-	return mcp.NewTool("create_tag",
-		mcp.WithDescription("Create a new tag for organizing files and folders"),
-		mcp.WithString("name", mcp.Required(), mcp.Description("Tag name")),
-		mcp.WithString("description", mcp.Description("Tag description")),
-		mcp.WithString("color", mcp.Description("Hex color code (e.g., #FF5733)")),
+func (t *TagTool) GetTool() mcp.Tool {
+	return mcp.NewTool("manage_tags",
+		mcp.WithDescription("Manage tags for organizing files and folders. Use the 'action' parameter to specify the operation."),
+		mcp.WithString("action", mcp.Required(), mcp.Description("Action to perform: create, list, get, update, delete")),
+		mcp.WithNumber("tag_id", mcp.Description("Tag ID (required for get, update, delete)")),
+		mcp.WithString("name", mcp.Description("Tag name (required for create, optional for update)")),
+		mcp.WithString("description", mcp.Description("Tag description (optional for create, update)")),
+		mcp.WithString("color", mcp.Description("Hex color code e.g. #FF5733 (optional for create, update)")),
+		mcp.WithString("keyword", mcp.Description("Search keyword to filter tags (for list)")),
+		mcp.WithNumber("limit", mcp.Description("Maximum number of tags to return, default 100 (for list)")),
+		mcp.WithNumber("offset", mcp.Description("Number of tags to skip for pagination (for list)")),
 	)
 }
 
-func (t *CreateTagTool) GetHandler() server.ToolHandlerFunc {
+func (t *TagTool) GetHandler() server.ToolHandlerFunc {
 	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		userID := utils.GetUserID(ctx)
 		if userID == "" {
@@ -38,220 +43,135 @@ func (t *CreateTagTool) GetHandler() server.ToolHandlerFunc {
 		}
 
 		args := getArgsMap(request.Params.Arguments)
-		name, _ := args["name"].(string)
-		if name == "" {
-			return mcp.NewToolResultError("name is required"), nil
-		}
+		action := getStringArg(args, "action")
 
-		tag := &models.Tag{
-			Name:        name,
-			Description: getStringArg(args, "description"),
-			Color:       getStringArg(args, "color"),
+		switch action {
+		case "create":
+			return t.handleCreate(userID, args)
+		case "list":
+			return t.handleList(userID, args)
+		case "get":
+			return t.handleGet(userID, args)
+		case "update":
+			return t.handleUpdate(userID, args)
+		case "delete":
+			return t.handleDelete(userID, args)
+		default:
+			return mcp.NewToolResultError(fmt.Sprintf("Invalid action: %s. Use create, list, get, update, or delete", action)), nil
 		}
-
-		if err := t.service.CreateTag(userID, tag); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to create tag: %v", err)), nil
-		}
-
-		result, _ := json.Marshal(tagToMap(tag))
-		return mcp.NewToolResultText(string(result)), nil
 	}
 }
 
-// ListTagsTool handles listing tags
-type ListTagsTool struct {
-	service services.TagService
-}
-
-func NewListTagsTool(service services.TagService) *ListTagsTool {
-	return &ListTagsTool{service: service}
-}
-
-func (t *ListTagsTool) GetTool() mcp.Tool {
-	return mcp.NewTool("list_tags",
-		mcp.WithDescription("List all tags with optional keyword search"),
-		mcp.WithString("keyword", mcp.Description("Search keyword to filter tags")),
-		mcp.WithNumber("limit", mcp.Description("Maximum number of tags to return (default: 100)")),
-		mcp.WithNumber("offset", mcp.Description("Number of tags to skip for pagination")),
-	)
-}
-
-func (t *ListTagsTool) GetHandler() server.ToolHandlerFunc {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		userID := utils.GetUserID(ctx)
-		if userID == "" {
-			return mcp.NewToolResultError("Authentication required"), nil
-		}
-
-		args := getArgsMap(request.Params.Arguments)
-		keyword := getStringArg(args, "keyword")
-		limit := getIntArg(args, "limit", 100)
-		offset := getIntArg(args, "offset", 0)
-
-		tags, total, err := t.service.ListTags(userID, keyword, limit, offset)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to list tags: %v", err)), nil
-		}
-
-		tagList := make([]map[string]interface{}, len(tags))
-		for i, tag := range tags {
-			tagList[i] = tagToMap(&tag)
-		}
-
-		result, _ := json.Marshal(map[string]interface{}{
-			"data":   tagList,
-			"total":  total,
-			"limit":  limit,
-			"offset": offset,
-		})
-		return mcp.NewToolResultText(string(result)), nil
+func (t *TagTool) handleCreate(userID string, args map[string]interface{}) (*mcp.CallToolResult, error) {
+	name, _ := args["name"].(string)
+	if name == "" {
+		return mcp.NewToolResultError("name is required for create action"), nil
 	}
-}
 
-// GetTagTool handles getting a tag by ID
-type GetTagTool struct {
-	service services.TagService
-}
-
-func NewGetTagTool(service services.TagService) *GetTagTool {
-	return &GetTagTool{service: service}
-}
-
-func (t *GetTagTool) GetTool() mcp.Tool {
-	return mcp.NewTool("get_tag",
-		mcp.WithDescription("Get a tag by its ID"),
-		mcp.WithNumber("tag_id", mcp.Required(), mcp.Description("Tag ID")),
-	)
-}
-
-func (t *GetTagTool) GetHandler() server.ToolHandlerFunc {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		userID := utils.GetUserID(ctx)
-		if userID == "" {
-			return mcp.NewToolResultError("Authentication required"), nil
-		}
-
-		args := getArgsMap(request.Params.Arguments)
-		tagID := getUintArg(args, "tag_id")
-		if tagID == 0 {
-			return mcp.NewToolResultError("tag_id is required"), nil
-		}
-
-		tag, err := t.service.GetTagByID(userID, tagID)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to get tag: %v", err)), nil
-		}
-		if tag == nil {
-			return mcp.NewToolResultError("Tag not found"), nil
-		}
-
-		result, _ := json.Marshal(tagToMap(tag))
-		return mcp.NewToolResultText(string(result)), nil
+	tag := &models.Tag{
+		Name:        name,
+		Description: getStringArg(args, "description"),
+		Color:       getStringArg(args, "color"),
 	}
-}
 
-// UpdateTagTool handles updating a tag
-type UpdateTagTool struct {
-	service services.TagService
-}
-
-func NewUpdateTagTool(service services.TagService) *UpdateTagTool {
-	return &UpdateTagTool{service: service}
-}
-
-func (t *UpdateTagTool) GetTool() mcp.Tool {
-	return mcp.NewTool("update_tag",
-		mcp.WithDescription("Update an existing tag"),
-		mcp.WithNumber("tag_id", mcp.Required(), mcp.Description("Tag ID")),
-		mcp.WithString("name", mcp.Description("New tag name")),
-		mcp.WithString("description", mcp.Description("New tag description")),
-		mcp.WithString("color", mcp.Description("New hex color code")),
-	)
-}
-
-func (t *UpdateTagTool) GetHandler() server.ToolHandlerFunc {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		userID := utils.GetUserID(ctx)
-		if userID == "" {
-			return mcp.NewToolResultError("Authentication required"), nil
-		}
-
-		args := getArgsMap(request.Params.Arguments)
-		tagID := getUintArg(args, "tag_id")
-		if tagID == 0 {
-			return mcp.NewToolResultError("tag_id is required"), nil
-		}
-
-		// Get existing tag
-		existing, err := t.service.GetTagByID(userID, tagID)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to get tag: %v", err)), nil
-		}
-		if existing == nil {
-			return mcp.NewToolResultError("Tag not found"), nil
-		}
-
-		// Update fields
-		if name, ok := args["name"].(string); ok && name != "" {
-			existing.Name = name
-		}
-		if description, ok := args["description"].(string); ok {
-			existing.Description = description
-		}
-		if color, ok := args["color"].(string); ok {
-			existing.Color = color
-		}
-
-		if err := t.service.UpdateTag(userID, existing); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to update tag: %v", err)), nil
-		}
-
-		// Fetch updated tag
-		updated, _ := t.service.GetTagByID(userID, tagID)
-		result, _ := json.Marshal(tagToMap(updated))
-		return mcp.NewToolResultText(string(result)), nil
+	if err := t.service.CreateTag(userID, tag); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to create tag: %v", err)), nil
 	}
+
+	result, _ := json.Marshal(tagToMap(tag))
+	return mcp.NewToolResultText(string(result)), nil
 }
 
-// DeleteTagTool handles deleting a tag
-type DeleteTagTool struct {
-	service services.TagService
-}
+func (t *TagTool) handleList(userID string, args map[string]interface{}) (*mcp.CallToolResult, error) {
+	keyword := getStringArg(args, "keyword")
+	limit := getIntArg(args, "limit", 100)
+	offset := getIntArg(args, "offset", 0)
 
-func NewDeleteTagTool(service services.TagService) *DeleteTagTool {
-	return &DeleteTagTool{service: service}
-}
-
-func (t *DeleteTagTool) GetTool() mcp.Tool {
-	return mcp.NewTool("delete_tag",
-		mcp.WithDescription("Delete a tag"),
-		mcp.WithNumber("tag_id", mcp.Required(), mcp.Description("Tag ID")),
-	)
-}
-
-func (t *DeleteTagTool) GetHandler() server.ToolHandlerFunc {
-	return func(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-		userID := utils.GetUserID(ctx)
-		if userID == "" {
-			return mcp.NewToolResultError("Authentication required"), nil
-		}
-
-		args := getArgsMap(request.Params.Arguments)
-		tagID := getUintArg(args, "tag_id")
-		if tagID == 0 {
-			return mcp.NewToolResultError("tag_id is required"), nil
-		}
-
-		if err := t.service.DeleteTag(userID, tagID); err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("Failed to delete tag: %v", err)), nil
-		}
-
-		result, _ := json.Marshal(map[string]interface{}{
-			"message": "Tag deleted successfully",
-			"tag_id":  tagID,
-		})
-		return mcp.NewToolResultText(string(result)), nil
+	tags, total, err := t.service.ListTags(userID, keyword, limit, offset)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to list tags: %v", err)), nil
 	}
+
+	tagList := make([]map[string]interface{}, len(tags))
+	for i, tag := range tags {
+		tagList[i] = tagToMap(&tag)
+	}
+
+	result, _ := json.Marshal(map[string]interface{}{
+		"data":   tagList,
+		"total":  total,
+		"limit":  limit,
+		"offset": offset,
+	})
+	return mcp.NewToolResultText(string(result)), nil
+}
+
+func (t *TagTool) handleGet(userID string, args map[string]interface{}) (*mcp.CallToolResult, error) {
+	tagID := getUintArg(args, "tag_id")
+	if tagID == 0 {
+		return mcp.NewToolResultError("tag_id is required for get action"), nil
+	}
+
+	tag, err := t.service.GetTagByID(userID, tagID)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to get tag: %v", err)), nil
+	}
+	if tag == nil {
+		return mcp.NewToolResultError("Tag not found"), nil
+	}
+
+	result, _ := json.Marshal(tagToMap(tag))
+	return mcp.NewToolResultText(string(result)), nil
+}
+
+func (t *TagTool) handleUpdate(userID string, args map[string]interface{}) (*mcp.CallToolResult, error) {
+	tagID := getUintArg(args, "tag_id")
+	if tagID == 0 {
+		return mcp.NewToolResultError("tag_id is required for update action"), nil
+	}
+
+	existing, err := t.service.GetTagByID(userID, tagID)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to get tag: %v", err)), nil
+	}
+	if existing == nil {
+		return mcp.NewToolResultError("Tag not found"), nil
+	}
+
+	if name, ok := args["name"].(string); ok && name != "" {
+		existing.Name = name
+	}
+	if description, ok := args["description"].(string); ok {
+		existing.Description = description
+	}
+	if color, ok := args["color"].(string); ok {
+		existing.Color = color
+	}
+
+	if err := t.service.UpdateTag(userID, existing); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to update tag: %v", err)), nil
+	}
+
+	updated, _ := t.service.GetTagByID(userID, tagID)
+	result, _ := json.Marshal(tagToMap(updated))
+	return mcp.NewToolResultText(string(result)), nil
+}
+
+func (t *TagTool) handleDelete(userID string, args map[string]interface{}) (*mcp.CallToolResult, error) {
+	tagID := getUintArg(args, "tag_id")
+	if tagID == 0 {
+		return mcp.NewToolResultError("tag_id is required for delete action"), nil
+	}
+
+	if err := t.service.DeleteTag(userID, tagID); err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("Failed to delete tag: %v", err)), nil
+	}
+
+	result, _ := json.Marshal(map[string]interface{}{
+		"message": "Tag deleted successfully",
+		"tag_id":  tagID,
+	})
+	return mcp.NewToolResultText(string(result)), nil
 }
 
 // Helper functions
